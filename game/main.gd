@@ -113,7 +113,7 @@ func _add_fixture(kind: String, x: int, y: int, symbol: String, label: String) -
         var departments := ["Fresh foods", "Cold drinks", "Snacks", "Household"]
         department = departments[(x + y) % departments.size()]
         unit_value = [5.49, 3.99, 2.49, 7.99][(x + y) % 4]
-    fixtures.append({"id": next_fixture_id, "kind": kind, "x": x, "y": y, "symbol": symbol, "label": label, "department": department, "unit_value": unit_value, "coverage": 8.0 if kind == "camera" else 0.0, "critical": kind == "entrance" or kind == "exit"})
+    fixtures.append({"id": next_fixture_id, "kind": kind, "x": x, "y": y, "symbol": symbol, "label": label, "department": department, "unit_value": unit_value, "coverage": 8.0 if kind == "camera" else 0.0, "critical": kind == "entrance" or kind == "exit", "product_id": -1})
     next_fixture_id += 1
 
 func _process(delta: float) -> void:
@@ -143,11 +143,11 @@ func _kind_from_type(type_id: int) -> String:
     var kinds := ["", "shelf", "shelf_bin", "short_shelf", "locked_shelf", "clearance", "register", "self_checkout", "camera", "entrance", "exit", "rfid_station", "locked_case"]
     return kinds[type_id] if type_id >= 0 and type_id < kinds.size() else "shelf"
 
-func _fixture_from_type(id: int, type_id: int, x: int, y: int, rotation: int) -> Dictionary:
+func _fixture_from_type(id: int, type_id: int, x: int, y: int, rotation: int, product_id: int = -1) -> Dictionary:
     var kind := _kind_from_type(type_id)
     var definition: Dictionary = BUILD_DEFS.get(kind, {"label": "Fixture", "symbol": "#", "color": Color("#788898")})
     var label := str(definition.label)
-    return {"id": id, "kind": kind, "x": x, "y": y, "rotation": rotation, "symbol": definition.symbol, "label": label, "department": "C-authoritative", "unit_value": 0.0, "coverage": 8.0 if kind == "camera" else 0.0, "critical": kind == "entrance" or kind == "exit"}
+    return {"id": id, "kind": kind, "x": x, "y": y, "rotation": rotation, "symbol": definition.symbol, "label": label, "department": "C-authoritative", "unit_value": 0.0, "coverage": 8.0 if kind == "camera" else 0.0, "critical": kind == "entrance" or kind == "exit", "product_id": product_id}
 
 func _consume_line(line: String) -> void:
     var fields := line.strip_edges().split(" ")
@@ -161,7 +161,8 @@ func _consume_line(line: String) -> void:
     elif fields[0] == "WALL" and fields.size() >= 6:
         wall_segments.append({"id": int(fields[1]), "a": Vector2(int(fields[2]), int(fields[3])), "b": Vector2(int(fields[4]), int(fields[5]))})
     elif fields[0] == "FIXTURE" and fields.size() >= 6:
-        fixtures.append(_fixture_from_type(int(fields[1]), int(fields[2]), int(fields[3]), int(fields[4]), int(fields[5])))
+        var product_id := int(fields[6]) if fields.size() >= 7 else -1
+        fixtures.append(_fixture_from_type(int(fields[1]), int(fields[2]), int(fields[3]), int(fields[4]), int(fields[5]), product_id))
     elif fields[0] == "COMMAND" and fields.size() >= 2:
         if int(fields[1]) != 0: process_error = "Construction rejected by C: status %s" % fields[1]
     elif fields[0] == "TICK" and fields.size() >= 8:
@@ -169,7 +170,7 @@ func _consume_line(line: String) -> void:
         metrics = {"revenue": float(fields[3]), "shrink": float(fields[4]), "labor": float(fields[5]), "wait": float(fields[6]), "satisfaction": float(fields[7])}
         entities.clear()
     elif fields[0] == "ENTITY" and fields.size() >= 6:
-        entities[fields[1]] = {"id": fields[1], "state": int(fields[2]), "x": float(fields[3]), "y": float(fields[4]), "product": int(fields[5])}
+        entities[fields[1]] = {"id": fields[1], "state": int(fields[2]), "x": float(fields[3]), "y": float(fields[4]), "product": int(fields[5]), "target_fixture_id": int(fields[6]) if fields.size() >= 7 else 0, "target_x": int(fields[7]) if fields.size() >= 8 else 0, "target_y": int(fields[8]) if fields.size() >= 9 else 0}
 
 func _iso(grid_position: Vector2) -> Vector2:
     return ORIGIN + Vector2((grid_position.x - grid_position.y) * TILE_W * 0.5, (grid_position.x + grid_position.y) * TILE_H * 0.5)

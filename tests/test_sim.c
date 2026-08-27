@@ -18,6 +18,39 @@ static ShrinkMetrics run(uint64_t seed)
     return metrics;
 }
 
+static void test_customer_uses_authoritative_target(void)
+{
+    ShrinkWorld *world = shrink_create(123U);
+    assert(world != NULL);
+    shrink_tick(world, 0.1);
+    ShrinkEntitySnapshot before;
+    assert(shrink_entity_snapshot(world, 0U, &before) == 1);
+    assert(before.target_fixture_id != 0U);
+
+    ShrinkGeometryInfo info;
+    shrink_geometry_info(world, &info);
+    ShrinkFixtureSnapshot fixture;
+    int found = 0;
+    for (size_t i = 0U; i < info.fixture_count; ++i) {
+        assert(shrink_fixture_snapshot(world, i, &fixture) == 1);
+        if (fixture.id == before.target_fixture_id) { found = 1; break; }
+    }
+    assert(found && fixture.product_id == (int)before.product);
+
+    assert(shrink_try_move_fixture(world, fixture.id, 20, 5) == SHRINK_BUILD_OK);
+    shrink_tick(world, 0.1);
+    ShrinkEntitySnapshot after;
+    assert(shrink_entity_snapshot(world, 0U, &after) == 1);
+    assert(after.target_fixture_id == fixture.id);
+    assert(after.target_x >= 20 && after.target_x <= 22);
+
+    assert(shrink_try_remove_fixture(world, fixture.id) == SHRINK_BUILD_OK);
+    shrink_tick(world, 0.1);
+    assert(shrink_entity_snapshot(world, 0U, &after) == 1);
+    assert(after.state == SHRINK_ENTITY_LEAVING);
+    shrink_destroy(world);
+}
+
 static void assert_same(ShrinkMetrics a, ShrinkMetrics b)
 {
     assert(a.customers_entered == b.customers_entered);
@@ -41,6 +74,8 @@ int main(void)
         path_x = x; path_y = y;
     }
     assert(path_x == 4 && path_y == 4);
+
+    test_customer_uses_authoritative_target();
 
     ShrinkWorld *geometry_world = shrink_create(77U);
     assert(geometry_world != NULL);

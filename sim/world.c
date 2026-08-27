@@ -27,6 +27,7 @@ typedef struct Customer {
     CustomerState state;
     double x, y;
     double target_x, target_y;
+    uint64_t target_fixture_id;
     double wait_seconds;
     double satisfaction;
     unsigned product;
@@ -114,24 +115,82 @@ static void finish_customer(ShrinkWorld *world, Customer *customer)
     }
 }
 
+static const ShrinkFixture *first_fixture_of_type(const ShrinkWorld *world, ShrinkFixtureType type)
+{
+    for (size_t i = 0U; i < world->geometry.fixture_count; ++i)
+        if (world->geometry.fixtures[i].type == type) return &world->geometry.fixtures[i];
+    return NULL;
+}
+
+static const ShrinkFixture *fixture_for_product(const ShrinkWorld *world, unsigned product)
+{
+    for (size_t i = 0U; i < world->geometry.fixture_count; ++i)
+        if (world->geometry.fixtures[i].product_id == (int)product) return &world->geometry.fixtures[i];
+    return NULL;
+}
+
+static int set_direct_target(ShrinkWorld *world, Customer *customer, ShrinkFixtureType type)
+{
+    const ShrinkFixture *fixture = first_fixture_of_type(world, type);
+    if (fixture == NULL) return 0;
+    customer->target_fixture_id = fixture->id;
+    customer->target_x = (double)fixture->x;
+    customer->target_y = (double)fixture->y;
+    return 1;
+}
+
+static int set_product_target(ShrinkWorld *world, Customer *customer)
+{
+    const ShrinkFixture *fixture = fixture_for_product(world, customer->product);
+    int access_x = 0, access_y = 0;
+    const int from_x = (int)lround(customer->x), from_y = (int)lround(customer->y);
+    if (fixture == NULL || !shrink_geometry_best_access_cell(&world->geometry, fixture->id, from_x, from_y, &access_x, &access_y)) return 0;
+    customer->target_fixture_id = fixture->id;
+    customer->target_x = (double)access_x;
+    customer->target_y = (double)access_y;
+    return 1;
+}
+
+static int revalidate_product_target(ShrinkWorld *world, Customer *customer)
+{
+    const ShrinkFixture *fixture = shrink_geometry_find_fixture(&world->geometry, customer->target_fixture_id);
+    int access_x = 0, access_y = 0;
+    const int from_x = (int)lround(customer->x), from_y = (int)lround(customer->y);
+    if (fixture == NULL || fixture->product_id != (int)customer->product ||
+        !shrink_geometry_best_access_cell(&world->geometry, fixture->id, from_x, from_y, &access_x, &access_y)) return set_product_target(world, customer);
+    customer->target_x = (double)access_x;
+    customer->target_y = (double)access_y;
+    return 1;
+}
+
+static void begin_leaving(ShrinkWorld *world, Customer *customer)
+{
+    customer->state = CUSTOMER_LEAVING;
+    (void)set_direct_target(world, customer, SHRINK_FIXTURE_EXIT);
+}
+
 static void spawn_customer(ShrinkWorld *world)
 {
     if (world->active_customers >= MAX_CUSTOMERS) return;
-    for (size_t i = 0; i < MAX_CUSTOMERS; ++i) {
+    for (size_t i = 0U; i < MAX_CUSTOMERS; ++i) {
         Customer *customer = &world->customers[i];
         if (customer->state == CUSTOMER_UNUSED) {
-            const unsigned product = (unsigned)(rng_next(world) % PRODUCT_COUNT);
-            const double product_x[PRODUCT_COUNT] = {4.0, 8.0, 11.0, 16.0};
+            const ShrinkFixture *entrance = first_fixture_of_type(world, SHRINK_FIXTURE_ENTRANCE);
+            if (entrance == NULL) return;
             customer->state = CUSTOMER_TO_PRODUCT;
-            customer->x = 1.0; customer->y = 10.0;
-            customer->target_x = product_x[product];
-            customer->target_y = 4.0 + (double)(product % 2U) * 10.0;
+            customer->x = (double)entrance->x; customer->y = (double)entrance->y;
+            customer->target_fixture_id = entrance->id;
             customer->wait_seconds = 0.0;
             customer->satisfaction = 100.0;
-            customer->product = product;
+            customer->product = (unsigned)(rng_next(world) % PRODUCT_COUNT);
             customer->id = ++world->next_customer_id;
             world->active_customers++;
             world->metrics.customers_entered++;
+            if (!set_product_target(world, customer)) {
+                world->metrics.abandoned++;
+                customer->satisfaction -= 25.0;
+                begin_leaving(world, customer);
+            }
             return;
         }
     }
@@ -143,8 +202,7 @@ static void decide_purchase(ShrinkWorld *world, Customer *customer)
     if (product->stock == 0U) {
         world->metrics.abandoned++;
         customer->satisfaction -= 25.0;
-        customer->target_x = 1.0; customer->target_y = 10.0;
-        customer->state = CUSTOMER_LEAVING;
+        begin_leaving(world, customer);
         return;
     }
     product->stock--;
@@ -154,11 +212,11 @@ static void decide_purchase(ShrinkWorld *world, Customer *customer)
         world->metrics.thefts++;
         world->metrics.stolen_value += product->price;
         customer->satisfaction -= 18.0;
-        customer->target_x = 1.0; customer->target_y = 10.0;
-        customer->state = CUSTOMER_LEAVING;
+        begin_leaving(world, customer);
     } else {
         customer->state = CUSTOMER_WAITING;
-        customer->target_x = 14.0; customer->target_y = 8.0;
+        if (!set_direct_target(world, customer, SHRINK_FIXTURE_REGISTER))
+            (void)set_direct_target(world, customer, SHRINK_FIXTURE_SELF_CHECKOUT);
     }
 }
 
@@ -192,8 +250,7 @@ static void update_registers(ShrinkWorld *world, double dt)
                 world->metrics.customers_served++;
                 world->metrics.revenue += product->price;
                 world->checkout_wait_sum += customer->wait_seconds;
-                customer->target_x = 1.0; customer->target_y = 10.0;
-                customer->state = CUSTOMER_LEAVING;
+                begin_leaving(world, customer);
             }
             world->register_customer[r] = 0U;
             world->register_timer[r] = 0.0;
@@ -233,9 +290,17 @@ void shrink_tick(ShrinkWorld *world, double dt_seconds)
     for (size_t i = 0; i < MAX_CUSTOMERS; ++i) {
         Customer *customer = &world->customers[i];
         if (customer->state == CUSTOMER_UNUSED) continue;
+        if (customer->state == CUSTOMER_TO_PRODUCT) {
+            if (!revalidate_product_target(world, customer)) {
+                world->metrics.abandoned++;
+                customer->satisfaction -= 25.0;
+                begin_leaving(world, customer);
+            }
+        }
         if (customer->state == CUSTOMER_TO_PRODUCT || customer->state == CUSTOMER_LEAVING)
             move_toward(customer, dt_seconds, blocked, world->geometry.width, world->geometry.height);
         if (customer->state == CUSTOMER_TO_PRODUCT && reached_target(customer)) {
+            if (!revalidate_product_target(world, customer)) continue;
             customer->state = CUSTOMER_DECIDING;
             decide_purchase(world, customer);
         } else if (customer->state == CUSTOMER_WAITING) {
@@ -277,6 +342,9 @@ int shrink_entity_snapshot(const ShrinkWorld *world, size_t index, ShrinkEntityS
         out_snapshot->state = customer->state == CUSTOMER_TO_PRODUCT ? SHRINK_ENTITY_TO_PRODUCT :
             customer->state == CUSTOMER_WAITING ? SHRINK_ENTITY_WAITING :
             customer->state == CUSTOMER_CHECKOUT ? SHRINK_ENTITY_CHECKOUT : SHRINK_ENTITY_LEAVING;
+        out_snapshot->target_fixture_id = customer->target_fixture_id;
+        out_snapshot->target_x = (int)lround(customer->target_x);
+        out_snapshot->target_y = (int)lround(customer->target_y);
         return 1;
     }
     return 0;
@@ -306,7 +374,7 @@ int shrink_fixture_snapshot(const ShrinkWorld *world, size_t index, ShrinkFixtur
 {
     if (world == NULL || out_snapshot == NULL || index >= world->geometry.fixture_count) return 0;
     const ShrinkFixture *fixture = &world->geometry.fixtures[index];
-    *out_snapshot = (ShrinkFixtureSnapshot){fixture->id, fixture->type, fixture->x, fixture->y, fixture->rotation};
+    *out_snapshot = (ShrinkFixtureSnapshot){fixture->id, fixture->type, fixture->x, fixture->y, fixture->rotation, fixture->product_id};
     return 1;
 }
 

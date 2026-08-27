@@ -59,7 +59,7 @@ static void stream_geometry(const ShrinkWorld *world)
     }
     for (size_t i = 0; i < info.fixture_count; ++i) {
         ShrinkFixtureSnapshot fixture;
-        if (shrink_fixture_snapshot(world, i, &fixture)) printf("FIXTURE %llu %d %d %d %d\n", (unsigned long long)fixture.id, (int)fixture.type, fixture.x, fixture.y, (int)fixture.rotation);
+        if (shrink_fixture_snapshot(world, i, &fixture)) printf("FIXTURE %llu %d %d %d %d %d\n", (unsigned long long)fixture.id, (int)fixture.type, fixture.x, fixture.y, (int)fixture.rotation, fixture.product_id);
     }
 }
 
@@ -76,8 +76,9 @@ static void stream_frame(const ShrinkWorld *world)
     for (size_t i = 0; i < count; ++i) {
         ShrinkEntitySnapshot entity;
         if (shrink_entity_snapshot(world, i, &entity))
-            printf("ENTITY %llu %d %.3f %.3f %u\n", (unsigned long long)entity.id,
-                   (int)entity.state, entity.x, entity.y, entity.product);
+            printf("ENTITY %llu %d %.3f %.3f %u %llu %d %d\n", (unsigned long long)entity.id,
+                   (int)entity.state, entity.x, entity.y, entity.product,
+                   (unsigned long long)entity.target_fixture_id, entity.target_x, entity.target_y);
     }
     fflush(stdout);
 }

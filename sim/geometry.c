@@ -2,6 +2,7 @@
 #include "pathfinding.h"
 
 #include <string.h>
+#include <limits.h>
 
 static int valid_cell(const ShrinkGeometry *g, int x, int y)
 {
@@ -170,6 +171,62 @@ static int access_cell_reachable(const ShrinkGeometry *g, const ShrinkFixture *f
     return 0;
 }
 
+static int access_candidate(const ShrinkGeometry *g, const ShrinkFixture *f, int x, int y)
+{
+    if (!valid_cell(g, x, y) || shrink_geometry_blocked(g, x, y)) return 0;
+    if ((f->access_mask & SHRINK_ACCESS_NORTH) && y == f->y - 1 && x >= f->x && x < f->x + (int)f->width) return 1;
+    if ((f->access_mask & SHRINK_ACCESS_SOUTH) && y == f->y + (int)f->height && x >= f->x && x < f->x + (int)f->width) return 1;
+    if ((f->access_mask & SHRINK_ACCESS_WEST) && x == f->x - 1 && y >= f->y && y < f->y + (int)f->height) return 1;
+    if ((f->access_mask & SHRINK_ACCESS_EAST) && x == f->x + (int)f->width && y >= f->y && y < f->y + (int)f->height) return 1;
+    return 0;
+}
+
+int shrink_geometry_best_access_cell(const ShrinkGeometry *g, uint64_t id, int from_x, int from_y, int *out_x, int *out_y)
+{
+    const ShrinkFixture *fixture = shrink_geometry_find_fixture(g, id);
+    unsigned short distance[SHRINK_MAX_CELLS];
+    unsigned short queue[SHRINK_MAX_CELLS];
+    size_t head = 0U, tail = 0U;
+    int best_distance = INT_MAX, best_x = -1, best_y = -1;
+    if (g == NULL || fixture == NULL || !valid_cell(g, from_x, from_y) || shrink_geometry_blocked(g, from_x, from_y)) return 0;
+    for (int i = 0; i < g->width * g->height; ++i) distance[i] = USHRT_MAX;
+    distance[from_y * g->width + from_x] = 0U;
+    queue[tail++] = (unsigned short)(from_y * g->width + from_x);
+    while (head < tail) {
+        const int index = (int)queue[head++];
+        const int x = index % g->width, y = index / g->width;
+        const int next_distance = (int)distance[index] + 1;
+        if (access_candidate(g, fixture, x, y) && ((int)distance[index] < best_distance ||
+            ((int)distance[index] == best_distance && (y < best_y || (y == best_y && x < best_x))))) {
+            best_distance = distance[index]; best_x = x; best_y = y;
+        }
+        if ((int)distance[index] >= best_distance) continue;
+        static const int dx[4] = {1, 0, -1, 0};
+        static const int dy[4] = {0, 1, 0, -1};
+        for (unsigned d = 0U; d < 4U; ++d) {
+            const int nx = x + dx[d], ny = y + dy[d];
+            if (!valid_cell(g, nx, ny) || shrink_geometry_blocked(g, nx, ny)) continue;
+            const int nindex = ny * g->width + nx;
+            if (distance[nindex] != USHRT_MAX) continue;
+            distance[nindex] = (unsigned short)next_distance;
+            queue[tail++] = (unsigned short)nindex;
+        }
+    }
+    if (best_x < 0) return 0;
+    if (out_x != NULL) *out_x = best_x;
+    if (out_y != NULL) *out_y = best_y;
+    return 1;
+}
+
+void shrink_geometry_set_fixture_product(ShrinkGeometry *g, uint64_t id, int product_id)
+{
+    ShrinkFixture *fixture;
+    for (size_t i = 0U; g != NULL && i < g->fixture_count; ++i) {
+        fixture = &g->fixtures[i];
+        if (fixture->id == id) { fixture->product_id = product_id; return; }
+    }
+}
+
 int shrink_geometry_fixture_accessible(const ShrinkGeometry *g, uint64_t id)
 {
     unsigned char reachable[SHRINK_MAX_CELLS];
@@ -215,10 +272,12 @@ void shrink_geometry_init(ShrinkGeometry *g)
     (void)shrink_geometry_place_fixture(g, SHRINK_FIXTURE_EXIT, 2, 10, 0U, NULL);
     (void)shrink_geometry_place_fixture(g, SHRINK_FIXTURE_REGISTER, 14, 8, 0U, NULL);
     (void)shrink_geometry_place_fixture(g, SHRINK_FIXTURE_REGISTER, 14, 12, 0U, NULL);
-    (void)shrink_geometry_place_fixture(g, SHRINK_FIXTURE_SHELF, 4, 5, 0U, NULL);
-    (void)shrink_geometry_place_fixture(g, SHRINK_FIXTURE_SHELF, 8, 13, 0U, NULL);
-    (void)shrink_geometry_place_fixture(g, SHRINK_FIXTURE_SHELF, 11, 5, 0U, NULL);
-    (void)shrink_geometry_place_fixture(g, SHRINK_FIXTURE_BIN, 6, 8, 0U, NULL);
+    uint64_t product_fixture_ids[4] = {0U, 0U, 0U, 0U};
+    (void)shrink_geometry_place_fixture(g, SHRINK_FIXTURE_SHELF, 4, 5, 0U, &product_fixture_ids[0]);
+    (void)shrink_geometry_place_fixture(g, SHRINK_FIXTURE_SHELF, 8, 13, 0U, &product_fixture_ids[1]);
+    (void)shrink_geometry_place_fixture(g, SHRINK_FIXTURE_SHELF, 11, 5, 0U, &product_fixture_ids[2]);
+    (void)shrink_geometry_place_fixture(g, SHRINK_FIXTURE_BIN, 6, 8, 0U, &product_fixture_ids[3]);
+    for (int product = 0; product < 4; ++product) shrink_geometry_set_fixture_product(g, product_fixture_ids[product], product);
     (void)shrink_geometry_place_fixture(g, SHRINK_FIXTURE_LOCKED_SHELF, 12, 8, 0U, NULL);
     (void)shrink_geometry_place_fixture(g, SHRINK_FIXTURE_CLEARANCE, 10, 12, 0U, NULL);
     (void)shrink_geometry_place_fixture(g, SHRINK_FIXTURE_SELF_CHECKOUT, 15, 8, 0U, NULL);
@@ -238,6 +297,7 @@ ShrinkBuildResult shrink_geometry_place_fixture(ShrinkGeometry *g, ShrinkFixture
     candidate.id = g->next_id++;
     candidate.type = type;
     candidate.x = x; candidate.y = y; candidate.rotation = rotation % 4U;
+    candidate.product_id = -1;
     fixture_metadata(type, candidate.rotation, &candidate.width, &candidate.height, &candidate.solid, &candidate.access_mask);
     if (!fixture_footprint_valid(g, &candidate, 0U)) return valid_cell(g, x, y) ? SHRINK_BUILD_COLLISION : SHRINK_BUILD_OUT_OF_BOUNDS;
     if ((type == SHRINK_FIXTURE_ENTRANCE || type == SHRINK_FIXTURE_EXIT) && !g->floor[y * g->width + x]) return SHRINK_BUILD_INVALID_DOOR;

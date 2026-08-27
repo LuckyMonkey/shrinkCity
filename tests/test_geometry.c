@@ -48,6 +48,30 @@ static void test_merchandise_access(void)
     assert(shrink_geometry_place_fixture(&geometry, SHRINK_FIXTURE_LOCKED_SHELF, 24, 20, 0U, NULL) == SHRINK_BUILD_BLOCKS_ROUTE);
 }
 
+static void test_access_cell_selection(void)
+{
+    ShrinkGeometry geometry;
+    shrink_geometry_init(&geometry);
+    const ShrinkFixture *fixture = NULL;
+    for (size_t i = 0U; i < geometry.fixture_count; ++i) {
+        if (geometry.fixtures[i].product_id == 0) { fixture = &geometry.fixtures[i]; break; }
+    }
+    assert(fixture != NULL);
+    int x1 = -1, y1 = -1, x2 = -1, y2 = -1;
+    assert(shrink_geometry_best_access_cell(&geometry, fixture->id, 1, 10, &x1, &y1) == 1);
+    assert(shrink_geometry_best_access_cell(&geometry, fixture->id, 1, 10, &x2, &y2) == 1);
+    assert(x1 == x2 && y1 == y2);
+    assert(!shrink_geometry_blocked(&geometry, x1, y1));
+    assert(!(x1 >= fixture->x && x1 < fixture->x + (int)fixture->width && y1 >= fixture->y && y1 < fixture->y + (int)fixture->height));
+
+    assert(shrink_geometry_move_fixture(&geometry, fixture->id, 20, 5) == SHRINK_BUILD_OK);
+    assert(shrink_geometry_best_access_cell(&geometry, fixture->id, 1, 10, &x1, &y1) == 1);
+    assert(x1 >= 20 && x1 <= 22 && (y1 == 4 || y1 == 6));
+    assert(shrink_geometry_rotate_fixture(&geometry, fixture->id, 1U) == SHRINK_BUILD_OK);
+    assert(shrink_geometry_best_access_cell(&geometry, fixture->id, 1, 10, &x1, &y1) == 1);
+    assert((x1 == 19 || x1 == 21) && y1 >= 5 && y1 <= 7);
+}
+
 static void test_replay(void)
 {
     ShrinkGeometry a, b;
@@ -74,6 +98,7 @@ int main(void)
 {
     test_multicell_footprints();
     test_merchandise_access();
+    test_access_cell_selection();
     test_replay();
     puts("shrink-geometry-tests: all assertions passed");
     return 0;

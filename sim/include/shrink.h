@@ -42,7 +42,7 @@ typedef struct ShrinkGeometryInfo {
     size_t fixture_count;
 } ShrinkGeometryInfo;
 typedef struct ShrinkWallSnapshot { uint64_t id; int ax, ay, bx, by; } ShrinkWallSnapshot;
-typedef struct ShrinkFixtureSnapshot { uint64_t id; ShrinkFixtureType type; int x, y; unsigned rotation; } ShrinkFixtureSnapshot;
+typedef struct ShrinkFixtureSnapshot { uint64_t id; ShrinkFixtureType type; int x, y; unsigned rotation; int product_id; } ShrinkFixtureSnapshot;
 
 typedef enum ShrinkEntityState {
     SHRINK_ENTITY_TO_PRODUCT = 1,
@@ -57,6 +57,9 @@ typedef struct ShrinkEntitySnapshot {
     double y;
     unsigned product;
     ShrinkEntityState state;
+    uint64_t target_fixture_id;
+    int target_x;
+    int target_y;
 } ShrinkEntitySnapshot;
 
 typedef struct ShrinkMetrics {

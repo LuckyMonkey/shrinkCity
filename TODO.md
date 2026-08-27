@@ -42,7 +42,7 @@ Acceptance: a headless command sequence can build an irregular store, move every
 - [ ] Add security policy toggles globally and per guard: patrol intensity, receipt checks, intervention threshold, camera monitoring, and customer-friction settings.
 - [ ] Add customer archetypes and seeded traits: shopping speed, budget, patience, basket size, theft tendency, security sensitivity, product preference, and route preference.
 - [ ] Add behavior heuristics: browse, compare, seek assistance, abandon, purchase, steal, conceal, react to congestion, and react to security friction.
-- [ ] Make all simulated people move along valid authoritative grid paths and expose their current path/intent in snapshots.
+- [ ] Make all simulated people move along valid authoritative grid paths and expose their current path/intent in snapshots. (Customer product targets now expose authoritative fixture/access-cell intent.)
 
 Acceptance: two identical seeds produce identical people, assignments, routes, decisions, thefts, waits, and metrics; different seeds produce varied but reproducible populations.
 
