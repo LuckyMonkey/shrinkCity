@@ -12,22 +12,23 @@ static void test_multicell_footprints(void)
     assert(shrink_geometry_place_fixture(&geometry, SHRINK_FIXTURE_SHELF, 20, 4, 0U, &shelf_id) == SHRINK_BUILD_OK);
     const ShrinkFixture *shelf = shrink_geometry_find_fixture(&geometry, shelf_id);
     assert(shelf != NULL);
-    assert(shelf->width == 1U && shelf->height == 3U);
-    assert(shrink_geometry_blocked(&geometry, 20, 4) == 1);
-    assert(shrink_geometry_blocked(&geometry, 20, 5) == 1);
-    assert(shrink_geometry_blocked(&geometry, 20, 6) == 1);
-
-    assert(shrink_geometry_rotate_fixture(&geometry, shelf_id, 1U) == SHRINK_BUILD_OK);
-    shelf = shrink_geometry_find_fixture(&geometry, shelf_id);
-    assert(shelf != NULL);
     assert(shelf->width == 3U && shelf->height == 1U);
     assert(shrink_geometry_blocked(&geometry, 20, 4) == 1);
     assert(shrink_geometry_blocked(&geometry, 21, 4) == 1);
     assert(shrink_geometry_blocked(&geometry, 22, 4) == 1);
     assert(shrink_geometry_blocked(&geometry, 20, 5) == 0);
 
-    assert(shrink_geometry_place_fixture(&geometry, SHRINK_FIXTURE_BIN, 22, 4, 0U, NULL) == SHRINK_BUILD_COLLISION);
-    assert(shrink_geometry_move_fixture(&geometry, shelf_id, 26, 4) == SHRINK_BUILD_COLLISION);
+    assert(shrink_geometry_rotate_fixture(&geometry, shelf_id, 1U) == SHRINK_BUILD_OK);
+    shelf = shrink_geometry_find_fixture(&geometry, shelf_id);
+    assert(shelf != NULL);
+    assert(shelf->width == 1U && shelf->height == 3U);
+    assert(shrink_geometry_blocked(&geometry, 20, 4) == 1);
+    assert(shrink_geometry_blocked(&geometry, 20, 5) == 1);
+    assert(shrink_geometry_blocked(&geometry, 20, 6) == 1);
+    assert(shrink_geometry_blocked(&geometry, 21, 4) == 0);
+
+    assert(shrink_geometry_place_fixture(&geometry, SHRINK_FIXTURE_BIN, 20, 6, 0U, NULL) == SHRINK_BUILD_COLLISION);
+    assert(shrink_geometry_move_fixture(&geometry, shelf_id, 26, 20) == SHRINK_BUILD_COLLISION);
 }
 
 static void test_merchandise_access(void)
@@ -39,12 +40,12 @@ static void test_merchandise_access(void)
     assert(shrink_geometry_place_fixture(&geometry, SHRINK_FIXTURE_LOCKED_SHELF, 24, 5, 0U, &shelf_id) == SHRINK_BUILD_OK);
     assert(shrink_geometry_fixture_accessible(&geometry, shelf_id) == 1);
 
-    /* Locked shelves are front-access only. Facing the perimeter leaves no usable interaction cell. */
-    assert(shrink_geometry_move_fixture(&geometry, shelf_id, 26, 5) == SHRINK_BUILD_BLOCKS_ROUTE);
+    /* Locked shelves are front-access only. Facing the south perimeter leaves no interaction aisle. */
+    assert(shrink_geometry_move_fixture(&geometry, shelf_id, 24, 20) == SHRINK_BUILD_BLOCKS_ROUTE);
     assert(shrink_geometry_fixture_accessible(&geometry, shelf_id) == 1);
 
-    /* A new front-access shelf directly against the blocked perimeter is rejected atomically. */
-    assert(shrink_geometry_place_fixture(&geometry, SHRINK_FIXTURE_LOCKED_SHELF, 26, 8, 0U, NULL) == SHRINK_BUILD_BLOCKS_ROUTE);
+    /* Rejected placement must not leave inaccessible merchandise in authoritative state. */
+    assert(shrink_geometry_place_fixture(&geometry, SHRINK_FIXTURE_LOCKED_SHELF, 24, 20, 0U, NULL) == SHRINK_BUILD_BLOCKS_ROUTE);
 }
 
 static void test_replay(void)
