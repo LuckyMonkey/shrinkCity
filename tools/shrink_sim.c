@@ -53,6 +53,7 @@ static void stream_geometry(const ShrinkWorld *world)
     ShrinkGeometryInfo info;
     shrink_geometry_info(world, &info);
     printf("GEOMETRY %d %d %zu %zu\n", info.width, info.height, info.wall_count, info.fixture_count);
+    for (int y = 0; y < info.height; ++y) printf("FLOOR %d %u\n", y, shrink_floor_row(world, y));
     for (size_t i = 0; i < info.wall_count; ++i) {
         ShrinkWallSnapshot wall;
         if (shrink_wall_snapshot(world, i, &wall)) printf("WALL %llu %d %d %d %d\n", (unsigned long long)wall.id, wall.ax, wall.ay, wall.bx, wall.by);

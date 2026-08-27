@@ -29,6 +29,7 @@ var dragged_fixture_id := 0
 var geometry_received := false
 var geometry_width := 28
 var geometry_height := 22
+var floor_rows: Array[int] = []
 var guard_position := Vector2(16, 16)
 var guard_time := 0.0
 var guard_path := [Vector2(16, 16), Vector2(12, 16), Vector2(12, 9), Vector2(18, 9), Vector2(18, 16)]
@@ -78,8 +79,7 @@ func _ready() -> void:
     queue_redraw()
 
 func _exit_tree() -> void:
-    # The stream is bounded and exits naturally; killing it during pipe teardown
-    # triggers a double-free in some Godot/Linux combinations.
+    # Do not manually free the child pipe; Godot owns the process handle.
     sim_pipe = null
 
 func _make_fixtures() -> void:
@@ -155,9 +155,14 @@ func _consume_line(line: String) -> void:
     if fields[0] == "GEOMETRY" and fields.size() >= 5:
         geometry_width = int(fields[1])
         geometry_height = int(fields[2])
+        floor_rows.clear()
+        for _y in range(geometry_height): floor_rows.append(0)
         fixtures.clear()
         wall_segments.clear()
         geometry_received = true
+    elif fields[0] == "FLOOR" and fields.size() >= 3:
+        var floor_y := int(fields[1])
+        if floor_y >= 0 and floor_y < floor_rows.size(): floor_rows[floor_y] = int(fields[2])
     elif fields[0] == "WALL" and fields.size() >= 6:
         wall_segments.append({"id": int(fields[1]), "a": Vector2(int(fields[2]), int(fields[3])), "b": Vector2(int(fields[4]), int(fields[5]))})
     elif fields[0] == "FIXTURE" and fields.size() >= 6:
@@ -254,6 +259,8 @@ func _draw_roaming_guard() -> void:
         draw_texture_rect(security_sprite, Rect2(center + Vector2(-30, -90), Vector2(60, 90)), false, Color.WHITE)
 
 func _inside_store(x: int, y: int) -> bool:
+    if geometry_received and y >= 0 and y < floor_rows.size():
+        return x >= 0 and x < 32 and (floor_rows[y] & (1 << x)) != 0
     if x < 1 or y < 1 or x >= 27 or y >= 21: return false
     if x <= 2 and y <= 3: return false
     if x <= 1 and y >= 18: return false
@@ -275,9 +282,39 @@ func _make_walls() -> void:
 func _draw_room_label(label: String, grid_position: Vector2) -> void:
     draw_string(ThemeDB.fallback_font, _iso(grid_position), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#635443"))
 
+func _draw_site() -> void:
+    for y in range(-4, 28):
+        for x in range(-5, 34):
+            if _inside_store(x, y): continue
+            var center := _iso(Vector2(x, y))
+            var tile_color := Color("#66835d")
+            if y >= 22 and y <= 25:
+                tile_color = Color("#4b5158") if (x + y) % 3 else Color("#555c63")
+            elif x >= 20 and x <= 26 and y >= 2 and y <= 8:
+                tile_color = Color("#9a8467")
+            elif (x * 13 + y * 7) % 5 == 0:
+                tile_color = Color("#56764f")
+            draw_colored_polygon(_tile_polygon(center), tile_color)
+            draw_polyline(PackedVector2Array([center + Vector2(0, -TILE_H * 0.5), center + Vector2(TILE_W * 0.5, 0), center + Vector2(0, TILE_H * 0.5), center + Vector2(-TILE_W * 0.5, 0), center + Vector2(0, -TILE_H * 0.5)]), Color(0.12, 0.18, 0.12, 0.18), 0.6)
+    for slot_x in range(3, 18, 3):
+        var slot := _iso(Vector2(slot_x, 23))
+        draw_line(slot + Vector2(-10, 0), slot + Vector2(10, 0), Color("#d2c786"), 1.5)
+    for tree in [Vector2(-1, 2), Vector2(29, 3), Vector2(-2, 17), Vector2(29, 18), Vector2(8, -2), Vector2(17, -2)]:
+        var tree_center := _iso(tree)
+        draw_line(tree_center, tree_center + Vector2(0, -20), Color("#503b2c"), 4.0)
+        draw_circle(tree_center + Vector2(0, -28), 14.0, Color("#315d3a"))
+        draw_circle(tree_center + Vector2(-8, -22), 9.0, Color("#477748"))
+    var dock := _iso(Vector2(23, 5))
+    draw_rect(Rect2(dock + Vector2(-22, -22), Vector2(44, 24)), Color("#7d634b"))
+    draw_rect(Rect2(dock + Vector2(-15, -30), Vector2(30, 9)), Color("#bd9a6a"))
+    draw_string(ThemeDB.fallback_font, dock + Vector2(-35, 16), "LOADING DOCK", HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color("#352d27"))
+    draw_string(ThemeDB.fallback_font, _iso(Vector2(5, 25)), "PARKING", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#e1d9bd"))
+    draw_string(ThemeDB.fallback_font, _iso(Vector2(22, 24)), "STREET", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#d4d7da"))
+
 func _draw() -> void:
     draw_rect(Rect2(0, 0, 1280, 720), Color("#101820"))
     draw_set_transform(view_offset, 0.0, Vector2(zoom, zoom))
+    _draw_site()
     for y in range(geometry_height):
         for x in range(geometry_width):
             if not _inside_store(x, y): continue
@@ -319,7 +356,11 @@ func _draw_ui() -> void:
     draw_rect(Rect2(980, 82, 275, 590), Color("#243442"))
     draw_string(ThemeDB.fallback_font, Vector2(1002, 116), "STORE CONTROL", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color.WHITE)
     var state_text := "BUILD MODE: %s\nAddon: %s\nCost: $%d" % ["ON" if build_mode else "OFF", BUILD_DEFS[build_kind].label, BUILD_DEFS[build_kind].cost]
-    draw_multiline_string(ThemeDB.fallback_font, Vector2(1002, 150), state_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, 24, Color("#ffd166") if build_mode else Color("#d8e5ef"))
+    draw_rect(Rect2(990, 128, 245, 42), Color("#3d5968") if build_mode else Color("#2d414d"))
+    draw_string(ThemeDB.fallback_font, Vector2(1005, 154), "CLICK / B: BUILD MODE  [%s]" % ("ON" if build_mode else "OFF"), HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#ffd166") if build_mode else Color("#d8e5ef"))
+    draw_rect(Rect2(990, 174, 245, 42), Color("#3d5968") if wall_mode else Color("#2d414d"))
+    draw_string(ThemeDB.fallback_font, Vector2(1005, 200), "CLICK / W: WALL TOOL  [%s]" % ("ON" if wall_mode else "OFF"), HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#ffd166") if wall_mode else Color("#d8e5ef"))
+    draw_multiline_string(ThemeDB.fallback_font, Vector2(1002, 235), state_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, 24, Color("#ffd166") if build_mode else Color("#d8e5ef"))
     var metric_text := "\nTICK %d\nCustomers: %d\n\nRevenue   $%.2f\nShrink    $%.2f\nLabor     $%.2f\nWait      %.1f sec\nSatisfaction %.1f%%" % [last_tick, entities.size(), metrics.get("revenue", 0.0), metrics.get("shrink", 0.0), metrics.get("labor", 0.0), metrics.get("wait", 0.0), metrics.get("satisfaction", 0.0)]
     draw_multiline_string(ThemeDB.fallback_font, Vector2(1002, 235), metric_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, 25, Color("#d8e5ef"))
     draw_string(ThemeDB.fallback_font, Vector2(1002, 430), "INSPECTOR", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color.WHITE)
@@ -335,8 +376,15 @@ func _draw_ui() -> void:
         draw_string(ThemeDB.fallback_font, tip_position + Vector2(10, 20), tip, HORIZONTAL_ALIGNMENT_LEFT, 170, 13, Color("#f4e1ad"))
     if process_error != "": draw_string(ThemeDB.fallback_font, Vector2(1002, 640), process_error, HORIZONTAL_ALIGNMENT_LEFT, 240, 13, Color("#ff7777"))
 
-func _unhandled_input(event: InputEvent) -> void:
+func _input(event: InputEvent) -> void:
     if event is InputEventMouseButton:
+        if event.button_index == MOUSE_BUTTON_LEFT and event.pressed and event.position.x > 980.0:
+            if event.position.y >= 135.0 and event.position.y < 180.0:
+                build_mode = not build_mode
+            elif event.position.y >= 180.0 and event.position.y < 220.0:
+                wall_mode = not wall_mode
+            queue_redraw()
+            return
         if event.button_index == MOUSE_BUTTON_LEFT:
             if event.pressed:
                 dragged_fixture_index = _fixture_index_at(event.position)

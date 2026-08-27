@@ -367,6 +367,15 @@ void shrink_metrics(const ShrinkWorld *world, ShrinkMetrics *out_metrics)
     if (world != NULL && out_metrics != NULL) *out_metrics = world->metrics;
 }
 
+uint32_t shrink_floor_row(const ShrinkWorld *world, int y)
+{
+    uint32_t row = 0U;
+    if (world == NULL || y < 0 || y >= world->geometry.height) return 0U;
+    for (int x = 0; x < world->geometry.width && x < 32; ++x)
+        if (world->geometry.floor[y * world->geometry.width + x]) row |= UINT32_C(1) << x;
+    return row;
+}
+
 void shrink_geometry_info(const ShrinkWorld *world, ShrinkGeometryInfo *out_info)
 {
     if (world == NULL || out_info == NULL) return;

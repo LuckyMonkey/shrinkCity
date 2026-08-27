@@ -269,6 +269,11 @@ void shrink_geometry_init(ShrinkGeometry *g)
     g->width = 28; g->height = 22; g->next_id = 1U;
     for (int y = 0; y < g->height; ++y)
         for (int x = 0; x < g->width; ++x) g->floor[y * g->width + x] = 1U;
+    /* The C-owned footprint has clipped corners, leaving room for the site layer. */
+    for (int y = 1; y <= 3; ++y) g->floor[y * g->width + 1] = 0U;
+    for (int y = 18; y <= 20; ++y) g->floor[y * g->width + 1] = 0U;
+    for (int y = 1; y <= 2; ++y) g->floor[y * g->width + 26] = 0U;
+    for (int y = 19; y <= 20; ++y) g->floor[y * g->width + 26] = 0U;
     (void)shrink_geometry_place_fixture(g, SHRINK_FIXTURE_ENTRANCE, 1, 10, 0U, NULL);
     (void)shrink_geometry_place_fixture(g, SHRINK_FIXTURE_EXIT, 2, 10, 0U, NULL);
     (void)shrink_geometry_place_fixture(g, SHRINK_FIXTURE_REGISTER, 14, 8, 0U, NULL);

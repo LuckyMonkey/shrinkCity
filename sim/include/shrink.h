@@ -85,6 +85,7 @@ size_t shrink_entity_count(const ShrinkWorld *world);
 int shrink_entity_snapshot(const ShrinkWorld *world, size_t index,
                            ShrinkEntitySnapshot *out_snapshot);
 void shrink_geometry_info(const ShrinkWorld *world, ShrinkGeometryInfo *out_info);
+uint32_t shrink_floor_row(const ShrinkWorld *world, int y);
 int shrink_wall_snapshot(const ShrinkWorld *world, size_t index, ShrinkWallSnapshot *out_snapshot);
 int shrink_fixture_snapshot(const ShrinkWorld *world, size_t index, ShrinkFixtureSnapshot *out_snapshot);
 ShrinkBuildResult shrink_try_place_fixture(ShrinkWorld *world, ShrinkFixtureType type, int x, int y, unsigned rotation, uint64_t *out_id);
