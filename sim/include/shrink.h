@@ -42,15 +42,7 @@ typedef struct ShrinkGeometryInfo {
     size_t fixture_count;
 } ShrinkGeometryInfo;
 typedef struct ShrinkWallSnapshot { uint64_t id; int ax, ay, bx, by; } ShrinkWallSnapshot;
-typedef struct ShrinkFixtureSnapshot {
-    uint64_t id;
-    ShrinkFixtureType type;
-    int x, y;
-    unsigned rotation;
-    unsigned width, height;
-    unsigned access_mask;
-    unsigned accessible;
-} ShrinkFixtureSnapshot;
+typedef struct ShrinkFixtureSnapshot { uint64_t id; ShrinkFixtureType type; int x, y; unsigned rotation; } ShrinkFixtureSnapshot;
 
 typedef enum ShrinkEntityState {
     SHRINK_ENTITY_TO_PRODUCT = 1,
@@ -99,7 +91,6 @@ ShrinkBuildResult shrink_try_remove_fixture(ShrinkWorld *world, uint64_t id);
 ShrinkBuildResult shrink_try_add_wall(ShrinkWorld *world, int ax, int ay, int bx, int by, uint64_t *out_id);
 ShrinkBuildResult shrink_try_remove_wall(ShrinkWorld *world, uint64_t id);
 int shrink_geometry_has_routes(const ShrinkWorld *world);
-int shrink_fixture_is_accessible(const ShrinkWorld *world, uint64_t id);
 
 #ifdef __cplusplus
 }
