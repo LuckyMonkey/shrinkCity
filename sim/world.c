@@ -3,6 +3,7 @@
 #include "geometry.h"
 
 #include <math.h>
+#include <limits.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
@@ -122,11 +123,22 @@ static const ShrinkFixture *first_fixture_of_type(const ShrinkWorld *world, Shri
     return NULL;
 }
 
-static const ShrinkFixture *fixture_for_product(const ShrinkWorld *world, unsigned product)
+static const ShrinkFixture *fixture_for_product(const ShrinkWorld *world, unsigned product, int from_x, int from_y)
 {
-    for (size_t i = 0U; i < world->geometry.fixture_count; ++i)
-        if (world->geometry.fixtures[i].product_id == (int)product) return &world->geometry.fixtures[i];
-    return NULL;
+    const ShrinkFixture *best = NULL;
+    int best_distance = INT_MAX;
+    for (size_t i = 0U; i < world->geometry.fixture_count; ++i) {
+        const ShrinkFixture *candidate = &world->geometry.fixtures[i];
+        int access_x = 0, access_y = 0, distance = 0;
+        if (candidate->product_id != (int)product ||
+            !shrink_geometry_best_access_cell(&world->geometry, candidate->id, from_x, from_y, &access_x, &access_y, &distance)) continue;
+        if (best == NULL || distance < best_distance ||
+            (distance == best_distance && candidate->id < best->id)) {
+            best = candidate;
+            best_distance = distance;
+        }
+    }
+    return best;
 }
 
 static int set_direct_target(ShrinkWorld *world, Customer *customer, ShrinkFixtureType type)
@@ -141,10 +153,10 @@ static int set_direct_target(ShrinkWorld *world, Customer *customer, ShrinkFixtu
 
 static int set_product_target(ShrinkWorld *world, Customer *customer)
 {
-    const ShrinkFixture *fixture = fixture_for_product(world, customer->product);
+    const ShrinkFixture *fixture = fixture_for_product(world, customer->product, (int)lround(customer->x), (int)lround(customer->y));
     int access_x = 0, access_y = 0;
     const int from_x = (int)lround(customer->x), from_y = (int)lround(customer->y);
-    if (fixture == NULL || !shrink_geometry_best_access_cell(&world->geometry, fixture->id, from_x, from_y, &access_x, &access_y)) return 0;
+    if (fixture == NULL || !shrink_geometry_best_access_cell(&world->geometry, fixture->id, from_x, from_y, &access_x, &access_y, NULL)) return 0;
     customer->target_fixture_id = fixture->id;
     customer->target_x = (double)access_x;
     customer->target_y = (double)access_y;
@@ -157,7 +169,7 @@ static int revalidate_product_target(ShrinkWorld *world, Customer *customer)
     int access_x = 0, access_y = 0;
     const int from_x = (int)lround(customer->x), from_y = (int)lround(customer->y);
     if (fixture == NULL || fixture->product_id != (int)customer->product ||
-        !shrink_geometry_best_access_cell(&world->geometry, fixture->id, from_x, from_y, &access_x, &access_y)) return set_product_target(world, customer);
+        !shrink_geometry_best_access_cell(&world->geometry, fixture->id, from_x, from_y, &access_x, &access_y, NULL)) return set_product_target(world, customer);
     customer->target_x = (double)access_x;
     customer->target_y = (double)access_y;
     return 1;

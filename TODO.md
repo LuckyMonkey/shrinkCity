@@ -18,7 +18,7 @@ Implemented and verified:
 
 Prototype-only and not yet authoritative:
 
-- fixture placement/movement, walls, departments, entrances, addons, guard patrol, FOV, and inspector properties currently live in Godot
+- departments, entrances, addons, guard patrol, FOV, and inspector properties are still prototype/data work; fixture and wall construction authority is in C
 - customers are still one simple product trip; staff/security are mostly visual
 - Godot process bridge must eventually become a GDExtension or equivalent native FFI
 
@@ -42,7 +42,7 @@ Acceptance: a headless command sequence can build an irregular store, move every
 - [ ] Add security policy toggles globally and per guard: patrol intensity, receipt checks, intervention threshold, camera monitoring, and customer-friction settings.
 - [ ] Add customer archetypes and seeded traits: shopping speed, budget, patience, basket size, theft tendency, security sensitivity, product preference, and route preference.
 - [ ] Add behavior heuristics: browse, compare, seek assistance, abandon, purchase, steal, conceal, react to congestion, and react to security friction.
-- [ ] Make all simulated people move along valid authoritative grid paths and expose their current path/intent in snapshots. (Customer product targets now expose authoritative fixture/access-cell intent.)
+- [ ] Make all simulated people move along valid authoritative grid paths and expose their current path/intent in snapshots. (Customer product target fixture/access-cell intent is implemented; full paths remain.)
 
 Acceptance: two identical seeds produce identical people, assignments, routes, decisions, thefts, waits, and metrics; different seeds produce varied but reproducible populations.
 
@@ -50,6 +50,7 @@ Acceptance: two identical seeds produce identical people, assignments, routes, d
 
 - [ ] Load validated `products.json`, `fixtures.json`, `security.json`, and `scenarios.json` into internal structs.
 - [ ] Add departments with item value, demand, margin, theft risk, replenishment rules, and customer preferences.
+- [x] Route customers to product fixtures and deterministic reachable interaction cells; revalidate targets after construction changes.
 - [ ] Add shelf variants: gondola, short shelf, bin, locked shelf, clear case, clearance rack, sale display, endcap, cooler, and high-value case.
 - [ ] Add shelf capacity, facing count, item placement, stock levels, restock thresholds, and employee restocking tasks.
 - [ ] Render product sprites/icons on shelves and expose item/departments/value/stock as tooltip properties.

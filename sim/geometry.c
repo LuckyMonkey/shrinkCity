@@ -181,7 +181,7 @@ static int access_candidate(const ShrinkGeometry *g, const ShrinkFixture *f, int
     return 0;
 }
 
-int shrink_geometry_best_access_cell(const ShrinkGeometry *g, uint64_t id, int from_x, int from_y, int *out_x, int *out_y)
+int shrink_geometry_best_access_cell(const ShrinkGeometry *g, uint64_t id, int from_x, int from_y, int *out_x, int *out_y, int *out_distance)
 {
     const ShrinkFixture *fixture = shrink_geometry_find_fixture(g, id);
     unsigned short distance[SHRINK_MAX_CELLS];
@@ -215,6 +215,7 @@ int shrink_geometry_best_access_cell(const ShrinkGeometry *g, uint64_t id, int f
     if (best_x < 0) return 0;
     if (out_x != NULL) *out_x = best_x;
     if (out_y != NULL) *out_y = best_y;
+    if (out_distance != NULL) *out_distance = best_distance;
     return 1;
 }
 
@@ -278,7 +279,9 @@ void shrink_geometry_init(ShrinkGeometry *g)
     (void)shrink_geometry_place_fixture(g, SHRINK_FIXTURE_SHELF, 11, 5, 0U, &product_fixture_ids[2]);
     (void)shrink_geometry_place_fixture(g, SHRINK_FIXTURE_BIN, 6, 8, 0U, &product_fixture_ids[3]);
     for (int product = 0; product < 4; ++product) shrink_geometry_set_fixture_product(g, product_fixture_ids[product], product);
-    (void)shrink_geometry_place_fixture(g, SHRINK_FIXTURE_LOCKED_SHELF, 12, 8, 0U, NULL);
+    uint64_t second_product_fixture_id = 0U;
+    (void)shrink_geometry_place_fixture(g, SHRINK_FIXTURE_LOCKED_SHELF, 12, 8, 0U, &second_product_fixture_id);
+    shrink_geometry_set_fixture_product(g, second_product_fixture_id, 0);
     (void)shrink_geometry_place_fixture(g, SHRINK_FIXTURE_CLEARANCE, 10, 12, 0U, NULL);
     (void)shrink_geometry_place_fixture(g, SHRINK_FIXTURE_SELF_CHECKOUT, 15, 8, 0U, NULL);
     (void)shrink_geometry_place_fixture(g, SHRINK_FIXTURE_CAMERA, 8, 3, 0U, NULL);

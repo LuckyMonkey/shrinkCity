@@ -53,7 +53,7 @@ const ShrinkFixture *shrink_geometry_find_fixture(const ShrinkGeometry *geometry
 int shrink_geometry_routes_valid(const ShrinkGeometry *geometry);
 void shrink_geometry_blocked_map(const ShrinkGeometry *geometry, unsigned char *out_blocked);
 int shrink_geometry_fixture_accessible(const ShrinkGeometry *geometry, uint64_t id);
-int shrink_geometry_best_access_cell(const ShrinkGeometry *geometry, uint64_t id, int from_x, int from_y, int *out_x, int *out_y);
+int shrink_geometry_best_access_cell(const ShrinkGeometry *geometry, uint64_t id, int from_x, int from_y, int *out_x, int *out_y, int *out_distance);
 void shrink_geometry_set_fixture_product(ShrinkGeometry *geometry, uint64_t id, int product_id);
 
 #endif
