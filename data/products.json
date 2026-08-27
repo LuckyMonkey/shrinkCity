@@ -1,0 +1,8 @@
+{
+  "products": [
+    {"id": "snack", "price": 2.49, "initial_stock": 100},
+    {"id": "drink", "price": 3.99, "initial_stock": 100},
+    {"id": "gum", "price": 1.79, "initial_stock": 100},
+    {"id": "meal", "price": 5.49, "initial_stock": 100}
+  ]
+}
