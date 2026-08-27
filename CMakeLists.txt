@@ -28,4 +28,10 @@ target_include_directories(shrink-tests PRIVATE sim)
 target_compile_options(shrink-tests PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
 add_test(NAME shrink-tests COMMAND shrink-tests)
 
+add_executable(shrink-geometry-tests tests/test_geometry.c)
+target_link_libraries(shrink-geometry-tests PRIVATE shrink_sim)
+target_include_directories(shrink-geometry-tests PRIVATE sim)
+target_compile_options(shrink-geometry-tests PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+add_test(NAME shrink-geometry-tests COMMAND shrink-geometry-tests)
+
 add_test(NAME shrink-stream COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_stream.sh $<TARGET_FILE:shrink-sim>)
