@@ -25,6 +25,10 @@ var sprite_sheet: Texture2D
 var hovered: Dictionary = {}
 var mouse_position := Vector2.ZERO
 var dragged_fixture_index := -1
+var dragged_fixture_id := 0
+var geometry_received := false
+var geometry_width := 28
+var geometry_height := 22
 var guard_position := Vector2(16, 16)
 var guard_time := 0.0
 var guard_path := [Vector2(16, 16), Vector2(12, 16), Vector2(12, 9), Vector2(18, 9), Vector2(18, 16)]
@@ -49,6 +53,9 @@ const BUILD_DEFS = {
     "locked_shelf": {"label": "Locked shelf", "symbol": "🔒", "color": Color("#a66ba6"), "cost": 180},
     "clearance": {"label": "Clearance display", "symbol": "%", "color": Color("#db6a58"), "cost": 45},
     "camera": {"label": "Ceiling camera", "symbol": "📷", "color": Color("#7086a3"), "cost": 150},
+    "register": {"label": "Staffed register", "symbol": "💵", "color": Color("#4f9d69"), "cost": 240},
+    "entrance": {"label": "Entrance", "symbol": "IN", "color": Color("#65b7d6"), "cost": 500},
+    "exit": {"label": "Exit", "symbol": "OUT", "color": Color("#65b7d6"), "cost": 500},
     "detector_gate": {"label": "Detector gate", "symbol": "║", "color": Color("#d7a94b"), "cost": 250},
     "rfid_station": {"label": "RFID tagging station", "symbol": "RF", "color": Color("#55a6c9"), "cost": 220},
     "self_checkout": {"label": "Self-checkout", "symbol": "🧾", "color": Color("#4eaa91"), "cost": 300},
@@ -127,10 +134,37 @@ func _process(delta: float) -> void:
             for line in lines: _consume_line(line)
     queue_redraw()
 
+func _send_command(command: String) -> void:
+    if sim_pipe != null:
+        sim_pipe.store_line(command)
+        sim_pipe.flush()
+
+func _kind_from_type(type_id: int) -> String:
+    var kinds := ["", "shelf", "shelf_bin", "short_shelf", "locked_shelf", "clearance", "register", "self_checkout", "camera", "entrance", "exit", "rfid_station", "locked_case"]
+    return kinds[type_id] if type_id >= 0 and type_id < kinds.size() else "shelf"
+
+func _fixture_from_type(id: int, type_id: int, x: int, y: int, rotation: int) -> Dictionary:
+    var kind := _kind_from_type(type_id)
+    var definition: Dictionary = BUILD_DEFS.get(kind, {"label": "Fixture", "symbol": "#", "color": Color("#788898")})
+    var label := str(definition.label)
+    return {"id": id, "kind": kind, "x": x, "y": y, "rotation": rotation, "symbol": definition.symbol, "label": label, "department": "C-authoritative", "unit_value": 0.0, "coverage": 8.0 if kind == "camera" else 0.0, "critical": kind == "entrance" or kind == "exit"}
+
 func _consume_line(line: String) -> void:
     var fields := line.strip_edges().split(" ")
     if fields.is_empty(): return
-    if fields[0] == "TICK" and fields.size() >= 8:
+    if fields[0] == "GEOMETRY" and fields.size() >= 5:
+        geometry_width = int(fields[1])
+        geometry_height = int(fields[2])
+        fixtures.clear()
+        wall_segments.clear()
+        geometry_received = true
+    elif fields[0] == "WALL" and fields.size() >= 6:
+        wall_segments.append({"id": int(fields[1]), "a": Vector2(int(fields[2]), int(fields[3])), "b": Vector2(int(fields[4]), int(fields[5]))})
+    elif fields[0] == "FIXTURE" and fields.size() >= 6:
+        fixtures.append(_fixture_from_type(int(fields[1]), int(fields[2]), int(fields[3]), int(fields[4]), int(fields[5])))
+    elif fields[0] == "COMMAND" and fields.size() >= 2:
+        if int(fields[1]) != 0: process_error = "Construction rejected by C: status %s" % fields[1]
+    elif fields[0] == "TICK" and fields.size() >= 8:
         last_tick = int(fields[1])
         metrics = {"revenue": float(fields[3]), "shrink": float(fields[4]), "labor": float(fields[5]), "wait": float(fields[6]), "satisfaction": float(fields[7])}
         entities.clear()
@@ -243,8 +277,8 @@ func _draw_room_label(label: String, grid_position: Vector2) -> void:
 func _draw() -> void:
     draw_rect(Rect2(0, 0, 1280, 720), Color("#101820"))
     draw_set_transform(view_offset, 0.0, Vector2(zoom, zoom))
-    for y in range(MAP_H):
-        for x in range(MAP_W):
+    for y in range(geometry_height):
+        for x in range(geometry_width):
             if not _inside_store(x, y): continue
             var center := _iso(Vector2(x, y))
             var floor_color := Color("#d9c79e") if (x + y) % 2 == 0 else Color("#d1bc91")
@@ -308,13 +342,17 @@ func _unhandled_input(event: InputEvent) -> void:
                 drag_distance = 0.0
                 if dragged_fixture_index >= 0:
                     selected = fixtures[dragged_fixture_index]
+                    dragged_fixture_id = int(fixtures[dragged_fixture_index].id)
                     dragging = false
                 else:
                     dragging = true
             else:
                 dragging = false
                 if dragged_fixture_index >= 0:
+                    var moved: Dictionary = fixtures[dragged_fixture_index]
+                    _send_command("MOVE %d %d %d" % [int(dragged_fixture_id), int(moved.x), int(moved.y)])
                     dragged_fixture_index = -1
+                    dragged_fixture_id = 0
                 elif drag_distance < 8.0:
                     _click_world(event.position)
         elif event.pressed and event.button_index == MOUSE_BUTTON_WHEEL_UP:
@@ -381,13 +419,13 @@ func _click_world(screen_position: Vector2) -> void:
     if wall_mode:
         if wall_start.x < 0: wall_start = tile
         elif _inside_store(int(tile.x), int(tile.y)):
-            wall_segments.append({"a": wall_start, "b": tile})
+            _send_command("WALL %d %d %d %d" % [int(wall_start.x), int(wall_start.y), int(tile.x), int(tile.y)])
             wall_start = Vector2(-1, -1)
         return
     if build_mode:
         if _inside_store(int(tile.x), int(tile.y)) and not _fixture_at(tile):
             var definition: Dictionary = BUILD_DEFS[build_kind]
-            _add_fixture(build_kind, int(tile.x), int(tile.y), definition.symbol, definition.label)
+            _send_command("PLACE %s %d %d 0" % [build_kind, int(tile.x), int(tile.y)])
         return
     var closest_distance := 26.0
     selected = {}
@@ -407,20 +445,13 @@ func _remove_fixture_at(screen_position: Vector2) -> void:
     for i in range(fixtures.size() - 1, -1, -1):
         var fixture: Dictionary = fixtures[i]
         if fixture.x == int(tile.x) and fixture.y == int(tile.y) and (int(fixture.id) >= 100 or not fixture.critical) and _critical_routes_safe(fixture):
-            fixtures.remove_at(i)
+            _send_command("REMOVE %d" % int(fixture.id))
             selected = {}
-            queue_redraw()
             return
 
-func _critical_routes_safe(candidate: Dictionary) -> bool:
-    if not candidate.critical: return true
-    var entrances := 0
-    var exits := 0
-    for fixture in fixtures:
-        if fixture == candidate: continue
-        if fixture.kind == "entrance": entrances += 1
-        if fixture.kind == "exit": exits += 1
-    return entrances > 0 and exits > 0
+func _critical_routes_safe(_candidate: Dictionary) -> bool:
+    # C is the only authority for door/connectivity validation.
+    return true
 
 func _fixture_at(tile: Vector2) -> bool:
     for fixture in fixtures:

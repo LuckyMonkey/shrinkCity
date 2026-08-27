@@ -24,13 +24,13 @@ Prototype-only and not yet authoritative:
 
 ## Priority 1 — authoritative world/construction model
 
-- [ ] Add C world dimensions, walkable-cell map, wall segments, rooms, departments, fixtures, entrances, exits, and checklanes.
-- [ ] Add commands/API for place, move, rotate, remove, and upgrade any fixture or wall segment.
-- [ ] Validate construction commands before applying them: bounds, collisions, walkability, required entrance, required exit, connected customer route, and reachable checkout/exit.
+- [x] Add C world dimensions, walkable-cell map, wall segments, fixtures, entrances, exits, and registers/checklanes (rooms/departments remain Godot/data work).
+- [x] Add C commands/API for place, move, rotate, remove, and add/remove wall segments.
+- [x] Validate construction commands before applying them: bounds, collisions, required entrance, required exit, and connected checkout/exit route.
 - [ ] Support multiple entrances and exits with per-door properties: capacity, direction, open/closed state, detector upgrades, and customer flow.
 - [ ] Add store expansion purchases: adjacent parcels/portions, cost, construction time, new walls, parking, loading dock, and unlockable departments.
-- [ ] Add a read-only world snapshot containing rooms, walls, fixtures, doors, staff, customers, inventory, and FOV data for Godot.
-- [ ] Replace the Godot process bridge with a native GDExtension/FFI adapter using the same C API.
+- [x] Add a read-only world snapshot containing dimensions, walls, fixtures, doors, customers, and stable IDs for Godot.
+- [ ] Replace the temporary Godot process bridge with a native GDExtension/FFI adapter using the same C API.
 
 Acceptance: a headless command sequence can build an irregular store, move every fixture, add/remove doors safely, and serialize/replay the same result from the same seed.
 
@@ -42,7 +42,7 @@ Acceptance: a headless command sequence can build an irregular store, move every
 - [ ] Add security policy toggles globally and per guard: patrol intensity, receipt checks, intervention threshold, camera monitoring, and customer-friction settings.
 - [ ] Add customer archetypes and seeded traits: shopping speed, budget, patience, basket size, theft tendency, security sensitivity, product preference, and route preference.
 - [ ] Add behavior heuristics: browse, compare, seek assistance, abandon, purchase, steal, conceal, react to congestion, and react to security friction.
-- [ ] Make all simulated people move along valid grid paths and expose their current path/intent in snapshots.
+- [ ] Make all simulated people move along valid authoritative grid paths and expose their current path/intent in snapshots.
 
 Acceptance: two identical seeds produce identical people, assignments, routes, decisions, thefts, waits, and metrics; different seeds produce varied but reproducible populations.
 

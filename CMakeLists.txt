@@ -7,7 +7,7 @@ set(CMAKE_C_EXTENSIONS OFF)
 
 option(SHRINK_ENABLE_SANITIZERS "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
 
-add_library(shrink_sim STATIC sim/world.c sim/pathfinding.c)
+add_library(shrink_sim STATIC sim/world.c sim/pathfinding.c sim/geometry.c)
 target_include_directories(shrink_sim PUBLIC sim/include)
 target_link_libraries(shrink_sim PUBLIC m)
 target_compile_options(shrink_sim PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)

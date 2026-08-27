@@ -10,6 +10,40 @@ extern "C" {
 
 typedef struct ShrinkWorld ShrinkWorld;
 
+typedef enum ShrinkFixtureType {
+    SHRINK_FIXTURE_SHELF = 1,
+    SHRINK_FIXTURE_BIN,
+    SHRINK_FIXTURE_SHORT_SHELF,
+    SHRINK_FIXTURE_LOCKED_SHELF,
+    SHRINK_FIXTURE_CLEARANCE,
+    SHRINK_FIXTURE_REGISTER,
+    SHRINK_FIXTURE_SELF_CHECKOUT,
+    SHRINK_FIXTURE_CAMERA,
+    SHRINK_FIXTURE_ENTRANCE,
+    SHRINK_FIXTURE_EXIT,
+    SHRINK_FIXTURE_RFID_STATION,
+    SHRINK_FIXTURE_LOCKED_CASE
+} ShrinkFixtureType;
+
+typedef enum ShrinkBuildResult {
+    SHRINK_BUILD_OK = 0,
+    SHRINK_BUILD_OUT_OF_BOUNDS,
+    SHRINK_BUILD_COLLISION,
+    SHRINK_BUILD_BLOCKS_ROUTE,
+    SHRINK_BUILD_INVALID_DOOR,
+    SHRINK_BUILD_INVALID_WALL,
+    SHRINK_BUILD_NOT_FOUND
+} ShrinkBuildResult;
+
+typedef struct ShrinkGeometryInfo {
+    int width;
+    int height;
+    size_t wall_count;
+    size_t fixture_count;
+} ShrinkGeometryInfo;
+typedef struct ShrinkWallSnapshot { uint64_t id; int ax, ay, bx, by; } ShrinkWallSnapshot;
+typedef struct ShrinkFixtureSnapshot { uint64_t id; ShrinkFixtureType type; int x, y; unsigned rotation; } ShrinkFixtureSnapshot;
+
 typedef enum ShrinkEntityState {
     SHRINK_ENTITY_TO_PRODUCT = 1,
     SHRINK_ENTITY_WAITING,
@@ -47,6 +81,16 @@ void shrink_metrics(const ShrinkWorld *world, ShrinkMetrics *out_metrics);
 size_t shrink_entity_count(const ShrinkWorld *world);
 int shrink_entity_snapshot(const ShrinkWorld *world, size_t index,
                            ShrinkEntitySnapshot *out_snapshot);
+void shrink_geometry_info(const ShrinkWorld *world, ShrinkGeometryInfo *out_info);
+int shrink_wall_snapshot(const ShrinkWorld *world, size_t index, ShrinkWallSnapshot *out_snapshot);
+int shrink_fixture_snapshot(const ShrinkWorld *world, size_t index, ShrinkFixtureSnapshot *out_snapshot);
+ShrinkBuildResult shrink_try_place_fixture(ShrinkWorld *world, ShrinkFixtureType type, int x, int y, unsigned rotation, uint64_t *out_id);
+ShrinkBuildResult shrink_try_move_fixture(ShrinkWorld *world, uint64_t id, int x, int y);
+ShrinkBuildResult shrink_try_rotate_fixture(ShrinkWorld *world, uint64_t id, unsigned rotation);
+ShrinkBuildResult shrink_try_remove_fixture(ShrinkWorld *world, uint64_t id);
+ShrinkBuildResult shrink_try_add_wall(ShrinkWorld *world, int ax, int ay, int bx, int by, uint64_t *out_id);
+ShrinkBuildResult shrink_try_remove_wall(ShrinkWorld *world, uint64_t id);
+int shrink_geometry_has_routes(const ShrinkWorld *world);
 
 #ifdef __cplusplus
 }

@@ -28,3 +28,8 @@ Godot 4 is not required to build the C core. If Godot 4 is installed, open `game
 
 
 For alternate visual test runs, pass arguments after `--`: `godot --path game -- --seed=7 --ticks=120`. The C test suite also validates the snapshot stream with `ctest`.
+
+
+## Authoritative construction
+
+The C core now owns the store geometry and validates construction commands. The Godot builder renders C geometry snapshots and sends commands over the temporary bidirectional process bridge. Stream commands include `PLACE`, `MOVE`, `ROTATE`, `REMOVE`, `WALL`, and `UNWALL`; rejected commands return a nonzero build status and leave the C world unchanged.
