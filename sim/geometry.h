@@ -9,6 +9,11 @@
 #define SHRINK_MAX_FIXTURES 512U
 #define SHRINK_MAX_CELLS 1024U
 
+#define SHRINK_ACCESS_NORTH 0x1U
+#define SHRINK_ACCESS_EAST  0x2U
+#define SHRINK_ACCESS_SOUTH 0x4U
+#define SHRINK_ACCESS_WEST  0x8U
+
 typedef struct ShrinkWall {
     uint64_t id;
     int ax, ay, bx, by;
@@ -20,6 +25,9 @@ typedef struct ShrinkFixture {
     int x, y;
     unsigned rotation;
     unsigned solid;
+    unsigned width;
+    unsigned height;
+    unsigned access_mask;
 } ShrinkFixture;
 
 typedef struct ShrinkGeometry {
@@ -43,5 +51,6 @@ ShrinkBuildResult shrink_geometry_remove_wall(ShrinkGeometry *geometry, uint64_t
 const ShrinkFixture *shrink_geometry_find_fixture(const ShrinkGeometry *geometry, uint64_t id);
 int shrink_geometry_routes_valid(const ShrinkGeometry *geometry);
 void shrink_geometry_blocked_map(const ShrinkGeometry *geometry, unsigned char *out_blocked);
+int shrink_geometry_fixture_accessible(const ShrinkGeometry *geometry, uint64_t id);
 
 #endif
