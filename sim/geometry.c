@@ -29,15 +29,15 @@ static void fixture_metadata(ShrinkFixtureType type, unsigned rotation,
     unsigned w = 1U, h = 1U, s = 0U, access = 0U;
     switch (type) {
         case SHRINK_FIXTURE_SHELF:
-            h = 3U; s = 1U; access = SHRINK_ACCESS_EAST | SHRINK_ACCESS_WEST; break;
+            w = 3U; s = 1U; access = SHRINK_ACCESS_NORTH | SHRINK_ACCESS_SOUTH; break;
         case SHRINK_FIXTURE_SHORT_SHELF:
-            h = 2U; s = 1U; access = SHRINK_ACCESS_EAST | SHRINK_ACCESS_WEST; break;
+            w = 2U; s = 1U; access = SHRINK_ACCESS_NORTH | SHRINK_ACCESS_SOUTH; break;
         case SHRINK_FIXTURE_LOCKED_SHELF:
-            h = 2U; s = 1U; access = SHRINK_ACCESS_EAST; break;
+            w = 2U; s = 1U; access = SHRINK_ACCESS_SOUTH; break;
         case SHRINK_FIXTURE_CLEARANCE:
             w = 2U; s = 1U; access = SHRINK_ACCESS_NORTH | SHRINK_ACCESS_EAST | SHRINK_ACCESS_SOUTH | SHRINK_ACCESS_WEST; break;
         case SHRINK_FIXTURE_LOCKED_CASE:
-            h = 2U; s = 1U; access = SHRINK_ACCESS_EAST; break;
+            w = 2U; s = 1U; access = SHRINK_ACCESS_SOUTH; break;
         case SHRINK_FIXTURE_BIN:
             s = 1U; access = SHRINK_ACCESS_NORTH | SHRINK_ACCESS_EAST | SHRINK_ACCESS_SOUTH | SHRINK_ACCESS_WEST; break;
         case SHRINK_FIXTURE_RFID_STATION:
