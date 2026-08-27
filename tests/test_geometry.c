@@ -78,6 +78,18 @@ static void test_access_cell_selection(void)
     assert((x1 == 19 || x1 == 21) && y1 >= 5 && y1 <= 7);
 }
 
+static void test_layout_templates(void)
+{
+    for (unsigned layout = 0U; layout < 5U; ++layout) {
+        ShrinkGeometry geometry;
+        shrink_geometry_init_layout(&geometry, layout);
+        assert(geometry.layout_id == layout);
+        assert(geometry.room_count >= 4U);
+        assert(shrink_geometry_routes_valid(&geometry) == 1);
+        assert(geometry.fixture_count >= 13U);
+    }
+}
+
 static void test_replay(void)
 {
     ShrinkGeometry a, b;
@@ -105,6 +117,7 @@ int main(void)
     test_multicell_footprints();
     test_merchandise_access();
     test_access_cell_selection();
+    test_layout_templates();
     test_replay();
     puts("shrink-geometry-tests: all assertions passed");
     return 0;

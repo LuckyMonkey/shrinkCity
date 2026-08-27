@@ -275,7 +275,7 @@ ShrinkWorld *shrink_create(uint64_t seed)
     ShrinkWorld *world = calloc(1, sizeof(*world));
     if (world == NULL) return NULL;
     world->seed = seed == 0U ? UINT64_C(88172645463393265) : seed;
-    shrink_geometry_init(&world->geometry);
+    shrink_geometry_init_layout(&world->geometry, (unsigned)(world->seed % 5U));
     const double prices[PRODUCT_COUNT] = { 2.49, 3.99, 1.79, 5.49 };
     for (size_t i = 0; i < PRODUCT_COUNT; ++i) {
         world->products[i].price = prices[i];
@@ -367,6 +367,14 @@ void shrink_metrics(const ShrinkWorld *world, ShrinkMetrics *out_metrics)
     if (world != NULL && out_metrics != NULL) *out_metrics = world->metrics;
 }
 
+int shrink_room_snapshot(const ShrinkWorld *world, size_t index, ShrinkRoomSnapshot *out_snapshot)
+{
+    if (world == NULL || out_snapshot == NULL || index >= world->geometry.room_count) return 0;
+    const ShrinkRoom *room = &world->geometry.rooms[index];
+    *out_snapshot = (ShrinkRoomSnapshot){room->id, room->type, room->x, room->y, room->width, room->height, (int)room->customer_accessible, (int)room->staff_accessible};
+    return 1;
+}
+
 uint32_t shrink_floor_row(const ShrinkWorld *world, int y)
 {
     uint32_t row = 0U;
@@ -381,6 +389,7 @@ void shrink_geometry_info(const ShrinkWorld *world, ShrinkGeometryInfo *out_info
     if (world == NULL || out_info == NULL) return;
     out_info->width = world->geometry.width; out_info->height = world->geometry.height;
     out_info->wall_count = world->geometry.wall_count; out_info->fixture_count = world->geometry.fixture_count;
+    out_info->room_count = world->geometry.room_count; out_info->layout_id = world->geometry.layout_id;
 }
 
 int shrink_wall_snapshot(const ShrinkWorld *world, size_t index, ShrinkWallSnapshot *out_snapshot)
@@ -395,7 +404,7 @@ int shrink_fixture_snapshot(const ShrinkWorld *world, size_t index, ShrinkFixtur
 {
     if (world == NULL || out_snapshot == NULL || index >= world->geometry.fixture_count) return 0;
     const ShrinkFixture *fixture = &world->geometry.fixtures[index];
-    *out_snapshot = (ShrinkFixtureSnapshot){fixture->id, fixture->type, fixture->x, fixture->y, fixture->rotation, fixture->product_id};
+    *out_snapshot = (ShrinkFixtureSnapshot){fixture->id, fixture->type, fixture->x, fixture->y, fixture->rotation, fixture->width, fixture->height, fixture->access_mask, fixture->product_id};
     return 1;
 }
 

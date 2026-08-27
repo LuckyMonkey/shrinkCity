@@ -52,15 +52,19 @@ static void stream_geometry(const ShrinkWorld *world)
 {
     ShrinkGeometryInfo info;
     shrink_geometry_info(world, &info);
-    printf("GEOMETRY %d %d %zu %zu\n", info.width, info.height, info.wall_count, info.fixture_count);
+    printf("GEOMETRY %d %d %zu %zu %zu %u\n", info.width, info.height, info.wall_count, info.fixture_count, info.room_count, info.layout_id);
     for (int y = 0; y < info.height; ++y) printf("FLOOR %d %u\n", y, shrink_floor_row(world, y));
+    for (size_t i = 0; i < info.room_count; ++i) {
+        ShrinkRoomSnapshot room;
+        if (shrink_room_snapshot(world, i, &room)) printf("ROOM %llu %d %d %d %d %d %d %d\n", (unsigned long long)room.id, (int)room.type, room.x, room.y, room.width, room.height, room.customer_accessible, room.staff_accessible);
+    }
     for (size_t i = 0; i < info.wall_count; ++i) {
         ShrinkWallSnapshot wall;
         if (shrink_wall_snapshot(world, i, &wall)) printf("WALL %llu %d %d %d %d\n", (unsigned long long)wall.id, wall.ax, wall.ay, wall.bx, wall.by);
     }
     for (size_t i = 0; i < info.fixture_count; ++i) {
         ShrinkFixtureSnapshot fixture;
-        if (shrink_fixture_snapshot(world, i, &fixture)) printf("FIXTURE %llu %d %d %d %d %d\n", (unsigned long long)fixture.id, (int)fixture.type, fixture.x, fixture.y, (int)fixture.rotation, fixture.product_id);
+        if (shrink_fixture_snapshot(world, i, &fixture)) printf("FIXTURE %llu %d %d %d %d %u %u %u %d\n", (unsigned long long)fixture.id, (int)fixture.type, fixture.x, fixture.y, (int)fixture.rotation, fixture.width, fixture.height, fixture.access_mask, fixture.product_id);
     }
 }
 

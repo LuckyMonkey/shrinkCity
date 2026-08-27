@@ -8,11 +8,20 @@
 #define SHRINK_MAX_WALLS 256U
 #define SHRINK_MAX_FIXTURES 512U
 #define SHRINK_MAX_CELLS 1024U
+#define SHRINK_MAX_ROOMS 16U
 
 #define SHRINK_ACCESS_NORTH 0x1U
 #define SHRINK_ACCESS_EAST  0x2U
 #define SHRINK_ACCESS_SOUTH 0x4U
 #define SHRINK_ACCESS_WEST  0x8U
+
+typedef struct ShrinkRoom {
+    uint64_t id;
+    ShrinkRoomType type;
+    int x, y, width, height;
+    unsigned customer_accessible;
+    unsigned staff_accessible;
+} ShrinkRoom;
 
 typedef struct ShrinkWall {
     uint64_t id;
@@ -36,12 +45,16 @@ typedef struct ShrinkGeometry {
     unsigned char floor[SHRINK_MAX_CELLS];
     ShrinkWall walls[SHRINK_MAX_WALLS];
     size_t wall_count;
+    ShrinkRoom rooms[SHRINK_MAX_ROOMS];
+    size_t room_count;
+    unsigned layout_id;
     ShrinkFixture fixtures[SHRINK_MAX_FIXTURES];
     size_t fixture_count;
     uint64_t next_id;
 } ShrinkGeometry;
 
 void shrink_geometry_init(ShrinkGeometry *geometry);
+void shrink_geometry_init_layout(ShrinkGeometry *geometry, unsigned layout_id);
 int shrink_geometry_blocked(const ShrinkGeometry *geometry, int x, int y);
 ShrinkBuildResult shrink_geometry_place_fixture(ShrinkGeometry *geometry, ShrinkFixtureType type, int x, int y, unsigned rotation, uint64_t *out_id);
 ShrinkBuildResult shrink_geometry_move_fixture(ShrinkGeometry *geometry, uint64_t id, int x, int y);

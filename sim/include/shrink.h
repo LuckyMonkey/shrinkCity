@@ -35,14 +35,31 @@ typedef enum ShrinkBuildResult {
     SHRINK_BUILD_NOT_FOUND
 } ShrinkBuildResult;
 
+typedef enum ShrinkRoomType {
+    SHRINK_ROOM_SALES_FLOOR = 1,
+    SHRINK_ROOM_STOCKROOM,
+    SHRINK_ROOM_RECEIVING,
+    SHRINK_ROOM_OFFICE,
+    SHRINK_ROOM_SECURITY,
+    SHRINK_ROOM_VESTIBULE
+} ShrinkRoomType;
 typedef struct ShrinkGeometryInfo {
     int width;
     int height;
     size_t wall_count;
     size_t fixture_count;
+    size_t room_count;
+    unsigned layout_id;
 } ShrinkGeometryInfo;
+typedef struct ShrinkRoomSnapshot {
+    uint64_t id;
+    ShrinkRoomType type;
+    int x, y, width, height;
+    int customer_accessible;
+    int staff_accessible;
+} ShrinkRoomSnapshot;
 typedef struct ShrinkWallSnapshot { uint64_t id; int ax, ay, bx, by; } ShrinkWallSnapshot;
-typedef struct ShrinkFixtureSnapshot { uint64_t id; ShrinkFixtureType type; int x, y; unsigned rotation; int product_id; } ShrinkFixtureSnapshot;
+typedef struct ShrinkFixtureSnapshot { uint64_t id; ShrinkFixtureType type; int x, y; unsigned rotation; unsigned width, height; unsigned access_mask; int product_id; } ShrinkFixtureSnapshot;
 
 typedef enum ShrinkEntityState {
     SHRINK_ENTITY_TO_PRODUCT = 1,
@@ -85,6 +102,7 @@ size_t shrink_entity_count(const ShrinkWorld *world);
 int shrink_entity_snapshot(const ShrinkWorld *world, size_t index,
                            ShrinkEntitySnapshot *out_snapshot);
 void shrink_geometry_info(const ShrinkWorld *world, ShrinkGeometryInfo *out_info);
+int shrink_room_snapshot(const ShrinkWorld *world, size_t index, ShrinkRoomSnapshot *out_snapshot);
 uint32_t shrink_floor_row(const ShrinkWorld *world, int y);
 int shrink_wall_snapshot(const ShrinkWorld *world, size_t index, ShrinkWallSnapshot *out_snapshot);
 int shrink_fixture_snapshot(const ShrinkWorld *world, size_t index, ShrinkFixtureSnapshot *out_snapshot);

@@ -263,17 +263,59 @@ static int routes_after_change(const ShrinkGeometry *g)
     return reachable_exit && reachable_register;
 }
 
+static void floor_rect(ShrinkGeometry *g, int x0, int y0, int x1, int y1)
+{
+    for (int y = y0; y <= y1; ++y)
+        for (int x = x0; x <= x1; ++x)
+            if (valid_cell(g, x, y)) g->floor[y * g->width + x] = 1U;
+}
+
+static void set_layout_floor(ShrinkGeometry *g, unsigned layout_id)
+{
+    memset(g->floor, 0, sizeof(g->floor));
+    switch (layout_id % 5U) {
+        case 0: /* Convenience: clipped corners. */
+            floor_rect(g, 1, 1, 26, 20);
+            for (int y = 1; y <= 3; ++y) g->floor[y * g->width + 1] = 0U;
+            for (int y = 18; y <= 20; ++y) g->floor[y * g->width + 1] = 0U;
+            for (int y = 1; y <= 2; ++y) g->floor[y * g->width + 26] = 0U;
+            for (int y = 19; y <= 20; ++y) g->floor[y * g->width + 26] = 0U;
+            break;
+        case 1: /* Strip-mall unit with a narrower rear wing. */
+            floor_rect(g, 1, 2, 26, 18); floor_rect(g, 1, 10, 20, 20);
+            break;
+        case 2: /* L-shaped neighborhood market. */
+            floor_rect(g, 1, 2, 26, 12); floor_rect(g, 1, 8, 18, 20);
+            break;
+        case 3: /* Discount store with a receiving bump-out. */
+            floor_rect(g, 1, 2, 18, 20); floor_rect(g, 10, 4, 26, 16);
+            break;
+        default: /* Awkward inherited T-shaped location. */
+            floor_rect(g, 1, 2, 18, 20); floor_rect(g, 1, 4, 26, 14);
+            break;
+    }
+}
+
+static void add_room(ShrinkGeometry *g, ShrinkRoomType type, int x, int y, int width, int height, unsigned customer, unsigned staff)
+{
+    if (g->room_count >= SHRINK_MAX_ROOMS) return;
+    g->rooms[g->room_count++] = (ShrinkRoom){g->room_count + 1U, type, x, y, width, height, customer, staff};
+}
+
 void shrink_geometry_init(ShrinkGeometry *g)
 {
+    shrink_geometry_init_layout(g, 0U);
+}
+
+void shrink_geometry_init_layout(ShrinkGeometry *g, unsigned layout_id)
+{
     memset(g, 0, sizeof(*g));
-    g->width = 28; g->height = 22; g->next_id = 1U;
-    for (int y = 0; y < g->height; ++y)
-        for (int x = 0; x < g->width; ++x) g->floor[y * g->width + x] = 1U;
-    /* The C-owned footprint has clipped corners, leaving room for the site layer. */
-    for (int y = 1; y <= 3; ++y) g->floor[y * g->width + 1] = 0U;
-    for (int y = 18; y <= 20; ++y) g->floor[y * g->width + 1] = 0U;
-    for (int y = 1; y <= 2; ++y) g->floor[y * g->width + 26] = 0U;
-    for (int y = 19; y <= 20; ++y) g->floor[y * g->width + 26] = 0U;
+    g->width = 28; g->height = 22; g->layout_id = layout_id % 5U; g->next_id = 1U;
+    set_layout_floor(g, g->layout_id);
+    add_room(g, SHRINK_ROOM_SALES_FLOOR, 2, 3, 16, 15, 1U, 1U);
+    add_room(g, SHRINK_ROOM_STOCKROOM, 19, 3, 7, 6, 0U, 1U);
+    add_room(g, SHRINK_ROOM_RECEIVING, 19, 10, 7, 7, 0U, 1U);
+    add_room(g, SHRINK_ROOM_SECURITY, 19, 18, 7, 3, 0U, 1U);
     (void)shrink_geometry_place_fixture(g, SHRINK_FIXTURE_ENTRANCE, 1, 10, 0U, NULL);
     (void)shrink_geometry_place_fixture(g, SHRINK_FIXTURE_EXIT, 2, 10, 0U, NULL);
     (void)shrink_geometry_place_fixture(g, SHRINK_FIXTURE_REGISTER, 14, 8, 0U, NULL);
