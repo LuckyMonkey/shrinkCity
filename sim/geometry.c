@@ -8,27 +8,201 @@ static int valid_cell(const ShrinkGeometry *g, int x, int y)
     return g != NULL && x >= 0 && y >= 0 && x < g->width && y < g->height;
 }
 
-static int route(const ShrinkGeometry *g, int sx, int sy, int gx, int gy)
+static unsigned rotate_access_mask(unsigned mask, unsigned rotation)
 {
-    unsigned char blocked[SHRINK_MAX_CELLS];
-    if (!valid_cell(g, sx, sy) || !valid_cell(g, gx, gy)) return 0;
-    for (int y = 0; y < g->height; ++y)
-        for (int x = 0; x < g->width; ++x)
-            blocked[y * g->width + x] = (unsigned char)shrink_geometry_blocked(g, x, y);
-    return shrink_path_reachable_grid(sx, sy, gx, gy, blocked, g->width, g->height);
+    rotation %= 4U;
+    while (rotation-- > 0U) {
+        unsigned next = 0U;
+        if (mask & SHRINK_ACCESS_NORTH) next |= SHRINK_ACCESS_EAST;
+        if (mask & SHRINK_ACCESS_EAST) next |= SHRINK_ACCESS_SOUTH;
+        if (mask & SHRINK_ACCESS_SOUTH) next |= SHRINK_ACCESS_WEST;
+        if (mask & SHRINK_ACCESS_WEST) next |= SHRINK_ACCESS_NORTH;
+        mask = next;
+    }
+    return mask;
+}
+
+static void fixture_metadata(ShrinkFixtureType type, unsigned rotation,
+                             unsigned *width, unsigned *height,
+                             unsigned *solid, unsigned *access_mask)
+{
+    unsigned w = 1U, h = 1U, s = 0U, access = 0U;
+    switch (type) {
+        case SHRINK_FIXTURE_SHELF:
+            h = 3U; s = 1U; access = SHRINK_ACCESS_EAST | SHRINK_ACCESS_WEST; break;
+        case SHRINK_FIXTURE_SHORT_SHELF:
+            h = 2U; s = 1U; access = SHRINK_ACCESS_EAST | SHRINK_ACCESS_WEST; break;
+        case SHRINK_FIXTURE_LOCKED_SHELF:
+            h = 2U; s = 1U; access = SHRINK_ACCESS_EAST; break;
+        case SHRINK_FIXTURE_CLEARANCE:
+            w = 2U; s = 1U; access = SHRINK_ACCESS_NORTH | SHRINK_ACCESS_EAST | SHRINK_ACCESS_SOUTH | SHRINK_ACCESS_WEST; break;
+        case SHRINK_FIXTURE_LOCKED_CASE:
+            h = 2U; s = 1U; access = SHRINK_ACCESS_EAST; break;
+        case SHRINK_FIXTURE_BIN:
+            s = 1U; access = SHRINK_ACCESS_NORTH | SHRINK_ACCESS_EAST | SHRINK_ACCESS_SOUTH | SHRINK_ACCESS_WEST; break;
+        case SHRINK_FIXTURE_RFID_STATION:
+            s = 1U; access = SHRINK_ACCESS_NORTH | SHRINK_ACCESS_EAST | SHRINK_ACCESS_SOUTH | SHRINK_ACCESS_WEST; break;
+        default:
+            break;
+    }
+    rotation %= 4U;
+    if ((rotation & 1U) != 0U) {
+        const unsigned tmp = w; w = h; h = tmp;
+    }
+    if (width != NULL) *width = w;
+    if (height != NULL) *height = h;
+    if (solid != NULL) *solid = s;
+    if (access_mask != NULL) *access_mask = rotate_access_mask(access, rotation);
+}
+
+static int merchandise_fixture(ShrinkFixtureType type)
+{
+    return type == SHRINK_FIXTURE_SHELF || type == SHRINK_FIXTURE_BIN ||
+           type == SHRINK_FIXTURE_SHORT_SHELF || type == SHRINK_FIXTURE_LOCKED_SHELF ||
+           type == SHRINK_FIXTURE_CLEARANCE || type == SHRINK_FIXTURE_LOCKED_CASE;
+}
+
+static int fixture_contains(const ShrinkFixture *f, int x, int y)
+{
+    return f != NULL && x >= f->x && y >= f->y &&
+           x < f->x + (int)f->width && y < f->y + (int)f->height;
+}
+
+static int wall_blocks(const ShrinkGeometry *g, int x, int y)
+{
+    for (size_t i = 0; i < g->wall_count; ++i) {
+        const ShrinkWall *w = &g->walls[i];
+        if (w->ay == w->by && y == w->ay && x >= (w->ax < w->bx ? w->ax : w->bx) && x <= (w->ax > w->bx ? w->ax : w->bx)) return 1;
+        if (w->ax == w->bx && x == w->ax && y >= (w->ay < w->by ? w->ay : w->by) && y <= (w->ay > w->by ? w->ay : w->by)) return 1;
+    }
+    return 0;
+}
+
+int shrink_geometry_blocked(const ShrinkGeometry *g, int x, int y)
+{
+    if (!valid_cell(g, x, y) || !g->floor[y * g->width + x]) return 1;
+    for (size_t i = 0; i < g->fixture_count; ++i)
+        if (g->fixtures[i].solid && fixture_contains(&g->fixtures[i], x, y)) return 1;
+    return wall_blocks(g, x, y);
+}
+
+static int fixture_footprint_valid(const ShrinkGeometry *g, const ShrinkFixture *candidate, uint64_t ignored_id)
+{
+    for (unsigned oy = 0; oy < candidate->height; ++oy) {
+        for (unsigned ox = 0; ox < candidate->width; ++ox) {
+            const int x = candidate->x + (int)ox;
+            const int y = candidate->y + (int)oy;
+            if (!valid_cell(g, x, y) || !g->floor[y * g->width + x] || wall_blocks(g, x, y)) return 0;
+            for (size_t i = 0; i < g->fixture_count; ++i) {
+                const ShrinkFixture *other = &g->fixtures[i];
+                if (other->id == ignored_id) continue;
+                if (fixture_contains(other, x, y)) return 0;
+            }
+        }
+    }
+    return 1;
+}
+
+static void flood_from_entrances(const ShrinkGeometry *g, unsigned char *reachable)
+{
+    unsigned short queue[SHRINK_MAX_CELLS];
+    size_t head = 0U, tail = 0U;
+    memset(reachable, 0, SHRINK_MAX_CELLS);
+
+    for (size_t i = 0; i < g->fixture_count; ++i) {
+        const ShrinkFixture *f = &g->fixtures[i];
+        if (f->type != SHRINK_FIXTURE_ENTRANCE || shrink_geometry_blocked(g, f->x, f->y)) continue;
+        const int idx = f->y * g->width + f->x;
+        if (!reachable[idx]) {
+            reachable[idx] = 1U;
+            queue[tail++] = (unsigned short)idx;
+        }
+    }
+
+    while (head < tail) {
+        const int idx = (int)queue[head++];
+        const int x = idx % g->width;
+        const int y = idx / g->width;
+        static const int dx[4] = {1, 0, -1, 0};
+        static const int dy[4] = {0, 1, 0, -1};
+        for (unsigned d = 0; d < 4U; ++d) {
+            const int nx = x + dx[d], ny = y + dy[d];
+            if (!valid_cell(g, nx, ny) || shrink_geometry_blocked(g, nx, ny)) continue;
+            const int nidx = ny * g->width + nx;
+            if (reachable[nidx]) continue;
+            reachable[nidx] = 1U;
+            queue[tail++] = (unsigned short)nidx;
+        }
+    }
+}
+
+static int access_cell_reachable(const ShrinkGeometry *g, const ShrinkFixture *f,
+                                 const unsigned char *reachable)
+{
+    if (f->access_mask & SHRINK_ACCESS_NORTH) {
+        const int y = f->y - 1;
+        for (unsigned ox = 0; ox < f->width; ++ox) {
+            const int x = f->x + (int)ox;
+            if (valid_cell(g, x, y) && !shrink_geometry_blocked(g, x, y) && reachable[y * g->width + x]) return 1;
+        }
+    }
+    if (f->access_mask & SHRINK_ACCESS_SOUTH) {
+        const int y = f->y + (int)f->height;
+        for (unsigned ox = 0; ox < f->width; ++ox) {
+            const int x = f->x + (int)ox;
+            if (valid_cell(g, x, y) && !shrink_geometry_blocked(g, x, y) && reachable[y * g->width + x]) return 1;
+        }
+    }
+    if (f->access_mask & SHRINK_ACCESS_WEST) {
+        const int x = f->x - 1;
+        for (unsigned oy = 0; oy < f->height; ++oy) {
+            const int y = f->y + (int)oy;
+            if (valid_cell(g, x, y) && !shrink_geometry_blocked(g, x, y) && reachable[y * g->width + x]) return 1;
+        }
+    }
+    if (f->access_mask & SHRINK_ACCESS_EAST) {
+        const int x = f->x + (int)f->width;
+        for (unsigned oy = 0; oy < f->height; ++oy) {
+            const int y = f->y + (int)oy;
+            if (valid_cell(g, x, y) && !shrink_geometry_blocked(g, x, y) && reachable[y * g->width + x]) return 1;
+        }
+    }
+    return 0;
+}
+
+int shrink_geometry_fixture_accessible(const ShrinkGeometry *g, uint64_t id)
+{
+    unsigned char reachable[SHRINK_MAX_CELLS];
+    const ShrinkFixture *fixture = shrink_geometry_find_fixture(g, id);
+    if (fixture == NULL) return 0;
+    if (!merchandise_fixture(fixture->type)) return 1;
+    flood_from_entrances(g, reachable);
+    return access_cell_reachable(g, fixture, reachable);
 }
 
 static int routes_after_change(const ShrinkGeometry *g)
 {
-    int entrance_x = -1, entrance_y = -1, exit_x = -1, exit_y = -1, register_x = -1, register_y = -1;
+    size_t entrances = 0U, exits = 0U, registers = 0U;
+    int reachable_exit = 0, reachable_register = 0;
+    unsigned char reachable[SHRINK_MAX_CELLS];
+
+    for (size_t i = 0; i < g->fixture_count; ++i) {
+        entrances += g->fixtures[i].type == SHRINK_FIXTURE_ENTRANCE;
+        exits += g->fixtures[i].type == SHRINK_FIXTURE_EXIT;
+        registers += g->fixtures[i].type == SHRINK_FIXTURE_REGISTER || g->fixtures[i].type == SHRINK_FIXTURE_SELF_CHECKOUT;
+    }
+    if (entrances == 0U || exits == 0U || registers == 0U) return 1;
+
+    flood_from_entrances(g, reachable);
     for (size_t i = 0; i < g->fixture_count; ++i) {
         const ShrinkFixture *f = &g->fixtures[i];
-        if (f->type == SHRINK_FIXTURE_ENTRANCE && entrance_x < 0) { entrance_x = f->x; entrance_y = f->y; }
-        if (f->type == SHRINK_FIXTURE_EXIT && exit_x < 0) { exit_x = f->x; exit_y = f->y; }
-        if (f->type == SHRINK_FIXTURE_REGISTER && register_x < 0) { register_x = f->x; register_y = f->y; }
+        if (valid_cell(g, f->x, f->y) && reachable[f->y * g->width + f->x]) {
+            if (f->type == SHRINK_FIXTURE_EXIT) reachable_exit = 1;
+            if (f->type == SHRINK_FIXTURE_REGISTER || f->type == SHRINK_FIXTURE_SELF_CHECKOUT) reachable_register = 1;
+        }
+        if (merchandise_fixture(f->type) && !access_cell_reachable(g, f, reachable)) return 0;
     }
-    if (entrance_x < 0 || exit_x < 0 || register_x < 0) return 1;
-    return route(g, entrance_x, entrance_y, register_x, register_y) && route(g, register_x, register_y, exit_x, exit_y);
+    return reachable_exit && reachable_register;
 }
 
 void shrink_geometry_init(ShrinkGeometry *g)
@@ -50,48 +224,25 @@ void shrink_geometry_init(ShrinkGeometry *g)
     (void)shrink_geometry_place_fixture(g, SHRINK_FIXTURE_SELF_CHECKOUT, 15, 8, 0U, NULL);
     (void)shrink_geometry_place_fixture(g, SHRINK_FIXTURE_CAMERA, 8, 3, 0U, NULL);
     (void)shrink_geometry_place_fixture(g, SHRINK_FIXTURE_CAMERA, 8, 17, 0U, NULL);
-    /* Keep the initial footprint legible while leaving the customer doors open. */
     (void)shrink_geometry_add_wall(g, 0, 0, 27, 0, NULL);
     (void)shrink_geometry_add_wall(g, 0, 21, 27, 21, NULL);
     (void)shrink_geometry_add_wall(g, 0, 0, 0, 21, NULL);
     (void)shrink_geometry_add_wall(g, 27, 0, 27, 21, NULL);
 }
 
-int shrink_geometry_blocked(const ShrinkGeometry *g, int x, int y)
-{
-    if (!valid_cell(g, x, y) || !g->floor[y * g->width + x]) return 1;
-    for (size_t i = 0; i < g->fixture_count; ++i)
-        if (g->fixtures[i].solid && g->fixtures[i].x == x && g->fixtures[i].y == y) return 1;
-    for (size_t i = 0; i < g->wall_count; ++i) {
-        const ShrinkWall *w = &g->walls[i];
-        if (w->ay == w->by && y == w->ay && x >= (w->ax < w->bx ? w->ax : w->bx) && x <= (w->ax > w->bx ? w->ax : w->bx)) return 1;
-        if (w->ax == w->bx && x == w->ax && y >= (w->ay < w->by ? w->ay : w->by) && y <= (w->ay > w->by ? w->ay : w->by)) return 1;
-    }
-    return 0;
-}
-
-static int fixture_collision(const ShrinkGeometry *g, int x, int y, uint64_t ignored_id)
-{
-    for (size_t i = 0; i < g->fixture_count; ++i)
-        if (g->fixtures[i].id != ignored_id && g->fixtures[i].x == x && g->fixtures[i].y == y) return 1;
-    return 0;
-}
-
-static unsigned is_solid(ShrinkFixtureType type)
-{
-    return type == SHRINK_FIXTURE_SHELF || type == SHRINK_FIXTURE_BIN || type == SHRINK_FIXTURE_SHORT_SHELF ||
-           type == SHRINK_FIXTURE_LOCKED_SHELF || type == SHRINK_FIXTURE_CLEARANCE || type == SHRINK_FIXTURE_LOCKED_CASE ||
-           0U;
-}
-
 ShrinkBuildResult shrink_geometry_place_fixture(ShrinkGeometry *g, ShrinkFixtureType type, int x, int y, unsigned rotation, uint64_t *out_id)
 {
-    if (g == NULL || g->fixture_count >= SHRINK_MAX_FIXTURES || !valid_cell(g, x, y)) return SHRINK_BUILD_OUT_OF_BOUNDS;
-    if (fixture_collision(g, x, y, 0U)) return SHRINK_BUILD_COLLISION;
+    if (g == NULL || g->fixture_count >= SHRINK_MAX_FIXTURES) return SHRINK_BUILD_OUT_OF_BOUNDS;
+    ShrinkFixture candidate;
+    memset(&candidate, 0, sizeof(candidate));
+    candidate.id = g->next_id++;
+    candidate.type = type;
+    candidate.x = x; candidate.y = y; candidate.rotation = rotation % 4U;
+    fixture_metadata(type, candidate.rotation, &candidate.width, &candidate.height, &candidate.solid, &candidate.access_mask);
+    if (!fixture_footprint_valid(g, &candidate, 0U)) return valid_cell(g, x, y) ? SHRINK_BUILD_COLLISION : SHRINK_BUILD_OUT_OF_BOUNDS;
     if ((type == SHRINK_FIXTURE_ENTRANCE || type == SHRINK_FIXTURE_EXIT) && !g->floor[y * g->width + x]) return SHRINK_BUILD_INVALID_DOOR;
-    ShrinkFixture candidate = {g->next_id++, type, x, y, rotation % 4U, is_solid(type)};
     g->fixtures[g->fixture_count++] = candidate;
-    if (!routes_after_change(g)) { g->fixture_count--; return SHRINK_BUILD_BLOCKS_ROUTE; }
+    if (!routes_after_change(g)) { --g->fixture_count; return SHRINK_BUILD_BLOCKS_ROUTE; }
     if (out_id != NULL) *out_id = candidate.id;
     return SHRINK_BUILD_OK;
 }
@@ -105,14 +256,13 @@ const ShrinkFixture *shrink_geometry_find_fixture(const ShrinkGeometry *g, uint6
 
 ShrinkBuildResult shrink_geometry_move_fixture(ShrinkGeometry *g, uint64_t id, int x, int y)
 {
-    if (!valid_cell(g, x, y)) return SHRINK_BUILD_OUT_OF_BOUNDS;
-    for (size_t i = 0; i < g->fixture_count; ++i) {
+    for (size_t i = 0; g != NULL && i < g->fixture_count; ++i) {
         ShrinkFixture *f = &g->fixtures[i];
         if (f->id != id) continue;
-        if (fixture_collision(g, x, y, id)) return SHRINK_BUILD_COLLISION;
-        const int old_x = f->x, old_y = f->y;
+        ShrinkFixture saved = *f;
         f->x = x; f->y = y;
-        if (!routes_after_change(g)) { f->x = old_x; f->y = old_y; return SHRINK_BUILD_BLOCKS_ROUTE; }
+        if (!fixture_footprint_valid(g, f, id)) { *f = saved; return valid_cell(g, x, y) ? SHRINK_BUILD_COLLISION : SHRINK_BUILD_OUT_OF_BOUNDS; }
+        if (!routes_after_change(g)) { *f = saved; return SHRINK_BUILD_BLOCKS_ROUTE; }
         return SHRINK_BUILD_OK;
     }
     return SHRINK_BUILD_NOT_FOUND;
@@ -120,13 +270,22 @@ ShrinkBuildResult shrink_geometry_move_fixture(ShrinkGeometry *g, uint64_t id, i
 
 ShrinkBuildResult shrink_geometry_rotate_fixture(ShrinkGeometry *g, uint64_t id, unsigned rotation)
 {
-    for (size_t i = 0; i < g->fixture_count; ++i) if (g->fixtures[i].id == id) { g->fixtures[i].rotation = rotation % 4U; return SHRINK_BUILD_OK; }
+    for (size_t i = 0; g != NULL && i < g->fixture_count; ++i) {
+        ShrinkFixture *f = &g->fixtures[i];
+        if (f->id != id) continue;
+        ShrinkFixture saved = *f;
+        f->rotation = rotation % 4U;
+        fixture_metadata(f->type, f->rotation, &f->width, &f->height, &f->solid, &f->access_mask);
+        if (!fixture_footprint_valid(g, f, id)) { *f = saved; return SHRINK_BUILD_COLLISION; }
+        if (!routes_after_change(g)) { *f = saved; return SHRINK_BUILD_BLOCKS_ROUTE; }
+        return SHRINK_BUILD_OK;
+    }
     return SHRINK_BUILD_NOT_FOUND;
 }
 
 ShrinkBuildResult shrink_geometry_remove_fixture(ShrinkGeometry *g, uint64_t id)
 {
-    for (size_t i = 0; i < g->fixture_count; ++i) {
+    for (size_t i = 0; g != NULL && i < g->fixture_count; ++i) {
         if (g->fixtures[i].id != id) continue;
         if (g->fixtures[i].type == SHRINK_FIXTURE_ENTRANCE || g->fixtures[i].type == SHRINK_FIXTURE_EXIT) {
             size_t entrances = 0U, exits = 0U;
@@ -156,13 +315,14 @@ ShrinkBuildResult shrink_geometry_add_wall(ShrinkGeometry *g, int ax, int ay, in
 
 ShrinkBuildResult shrink_geometry_remove_wall(ShrinkGeometry *g, uint64_t id)
 {
-    for (size_t i = 0; i < g->wall_count; ++i) if (g->walls[i].id == id) { memmove(&g->walls[i], &g->walls[i + 1], (g->wall_count - i - 1U) * sizeof(g->walls[0])); --g->wall_count; return SHRINK_BUILD_OK; }
+    for (size_t i = 0; g != NULL && i < g->wall_count; ++i) if (g->walls[i].id == id) { memmove(&g->walls[i], &g->walls[i + 1], (g->wall_count - i - 1U) * sizeof(g->walls[0])); --g->wall_count; return SHRINK_BUILD_OK; }
     return SHRINK_BUILD_NOT_FOUND;
 }
 
 int shrink_geometry_routes_valid(const ShrinkGeometry *g)
 {
     size_t entrances = 0U, exits = 0U, registers = 0U;
+    if (g == NULL) return 0;
     for (size_t i = 0; i < g->fixture_count; ++i) {
         entrances += g->fixtures[i].type == SHRINK_FIXTURE_ENTRANCE;
         exits += g->fixtures[i].type == SHRINK_FIXTURE_EXIT;
