@@ -592,7 +592,6 @@ void shrink_tick(ShrinkWorld *world, double dt_seconds)
 
     update_registers(world, dt_seconds);
     assign_queues(world);
-    world->metrics.labor_cost = round(world->metrics.labor_cost * 100.0) / 100.0;
     world->metrics.profit = world->metrics.revenue - world->metrics.cost_of_goods - world->metrics.stolen_value - world->metrics.labor_cost - world->metrics.security_cost;
     world->metrics.average_checkout_wait = world->metrics.purchases == 0U ? 0.0 : world->checkout_wait_sum / (double)world->metrics.purchases;
     world->metrics.average_satisfaction = world->satisfaction_count == 0U ? 100.0 : world->satisfaction_sum / (double)world->satisfaction_count;
