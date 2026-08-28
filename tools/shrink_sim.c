@@ -22,6 +22,15 @@ static ShrinkFixtureType fixture_type(const char *name)
     return 0;
 }
 
+static ShrinkEmployeeRole employee_role(const char *name)
+{
+    if (strcmp(name, "cashier") == 0) return SHRINK_EMPLOYEE_CASHIER;
+    if (strcmp(name, "associate") == 0) return SHRINK_EMPLOYEE_ASSOCIATE;
+    if (strcmp(name, "stocker") == 0) return SHRINK_EMPLOYEE_STOCKER;
+    if (strcmp(name, "security") == 0 || strcmp(name, "guard") == 0) return SHRINK_EMPLOYEE_SECURITY;
+    return 0;
+}
+
 static void process_commands(ShrinkWorld *world)
 {
     struct pollfd input = {STDIN_FILENO, POLLIN, 0};
@@ -30,21 +39,36 @@ static void process_commands(ShrinkWorld *world)
     if (fgets(line, sizeof(line), stdin) == NULL) return;
     uint64_t id = 0U, new_id = 0U;
     int x = 0, y = 0, ax = 0, ay = 0, bx = 0, by = 0, rotation = 0;
+    double wage = 0.0;
     char type[32];
-    ShrinkBuildResult result = SHRINK_BUILD_NOT_FOUND;
+    ShrinkBuildResult build_result = SHRINK_BUILD_NOT_FOUND;
+
+    if (sscanf(line, "HIRE %31s %lf", type, &wage) >= 1) {
+        const ShrinkStaffResult staff_result = shrink_hire_employee(world, employee_role(type), wage, &new_id);
+        printf("STAFF %d %" PRIu64 "\n", (int)staff_result, new_id);
+        fflush(stdout);
+        return;
+    }
+    if (sscanf(line, "FIRE %" SCNu64, &id) == 1) {
+        const ShrinkStaffResult staff_result = shrink_fire_employee(world, id);
+        printf("STAFF %d %" PRIu64 "\n", (int)staff_result, id);
+        fflush(stdout);
+        return;
+    }
+
     if (sscanf(line, "PLACE %31s %d %d %d", type, &x, &y, &rotation) == 4)
-        result = shrink_try_place_fixture(world, fixture_type(type), x, y, (unsigned)rotation, &new_id);
+        build_result = shrink_try_place_fixture(world, fixture_type(type), x, y, (unsigned)rotation, &new_id);
     else if (sscanf(line, "MOVE %" SCNu64 " %d %d", &id, &x, &y) == 3)
-        result = shrink_try_move_fixture(world, id, x, y);
+        build_result = shrink_try_move_fixture(world, id, x, y);
     else if (sscanf(line, "ROTATE %" SCNu64 " %d", &id, &rotation) == 2)
-        result = shrink_try_rotate_fixture(world, id, (unsigned)rotation);
+        build_result = shrink_try_rotate_fixture(world, id, (unsigned)rotation);
     else if (sscanf(line, "REMOVE %" SCNu64, &id) == 1)
-        result = shrink_try_remove_fixture(world, id);
+        build_result = shrink_try_remove_fixture(world, id);
     else if (sscanf(line, "WALL %d %d %d %d", &ax, &ay, &bx, &by) == 4)
-        result = shrink_try_add_wall(world, ax, ay, bx, by, &new_id);
+        build_result = shrink_try_add_wall(world, ax, ay, bx, by, &new_id);
     else if (sscanf(line, "UNWALL %" SCNu64, &id) == 1)
-        result = shrink_try_remove_wall(world, id);
-    printf("COMMAND %d %" PRIu64 "\n", (int)result, new_id);
+        build_result = shrink_try_remove_wall(world, id);
+    printf("COMMAND %d %" PRIu64 "\n", (int)build_result, new_id);
     fflush(stdout);
 }
 
@@ -76,7 +100,11 @@ static void stream_frame(const ShrinkWorld *world)
     stream_geometry(world);
     for (size_t i = 0U; i < shrink_employee_count(world); ++i) {
         ShrinkEmployeeSnapshot employee;
-        if (shrink_employee_snapshot(world, i, &employee)) printf("EMPLOYEE %llu %d %.2f %.2f %.2f %.2f %d %d\n", (unsigned long long)employee.id, (int)employee.role, employee.wage, employee.skill, employee.fatigue, employee.morale, employee.x, employee.y);
+        if (shrink_employee_snapshot(world, i, &employee))
+            printf("EMPLOYEE %llu %d %.2f %.2f %.2f %.2f %d %d %llu %d %d\n",
+                   (unsigned long long)employee.id, (int)employee.role, employee.wage, employee.skill,
+                   employee.fatigue, employee.morale, employee.x, employee.y,
+                   (unsigned long long)employee.target_fixture_id, employee.target_x, employee.target_y);
     }
     printf("TICK %llu %zu %.2f %.2f %.2f %.2f %.2f\n",
            (unsigned long long)shrink_tick_count(world), count, metrics.revenue,
