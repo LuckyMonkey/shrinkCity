@@ -14,7 +14,13 @@ static const ShrinkScenarioInfo SCENARIOS[] = {
      SHRINK_SCENARIO_GOAL_CUSTOMERS_SERVED, 80.0, 3U, UINT64_C(14)},
     {4U, "pharmacy", "Pharmacy - Small Items, Big Risk", "Pharmacy / health",
      "Small concealable products, concentrated high-risk zones, and customer-friction-sensitive security.",
-     SHRINK_SCENARIO_GOAL_SATISFACTION, 88.0, 2U, UINT64_C(15)}
+     SHRINK_SCENARIO_GOAL_SATISFACTION, 88.0, 2U, UINT64_C(15)},
+    {5U, "grocery-fresh", "Fresh Market - Delivery Day", "Full grocery",
+     "A larger grocery operation where replenishment, staffing coverage, and long customer trips create loss-prevention blind spots.",
+     SHRINK_SCENARIO_GOAL_PROFIT, 180.0, 2U, UINT64_C(12)},
+    {6U, "troubled-store", "Troubled Store - Turnaround", "Inherited discount store",
+     "An awkward inherited store with thin staffing, weak security coverage, and little room for operational mistakes.",
+     SHRINK_SCENARIO_GOAL_SHRINK_RATE, 10.0, 3U, UINT64_C(11)}
 };
 
 size_t shrink_scenario_count(void)
@@ -76,6 +82,21 @@ static void fire_one_role(ShrinkWorld *world, ShrinkEmployeeRole role)
     }
 }
 
+static void remove_cameras(ShrinkWorld *world, unsigned wanted)
+{
+    uint64_t ids[32];
+    unsigned count = 0U;
+    ShrinkGeometryInfo info;
+    shrink_geometry_info(world, &info);
+    for (size_t i = 0U; i < info.fixture_count && count < wanted && count < 32U; ++i) {
+        ShrinkFixtureSnapshot fixture;
+        if (shrink_fixture_snapshot(world, i, &fixture) && fixture.type == SHRINK_FIXTURE_CAMERA)
+            ids[count++] = fixture.id;
+    }
+    for (unsigned i = 0U; i < count; ++i)
+        (void)shrink_try_remove_fixture(world, ids[i]);
+}
+
 static void configure_corner_market(ShrinkWorld *world)
 {
     /* A lean neighborhood operation: one staffed lane plus self-checkout. */
@@ -106,6 +127,20 @@ static void configure_pharmacy(ShrinkWorld *world)
     (void)shrink_hire_employee(world, SHRINK_EMPLOYEE_ASSOCIATE, 18.5, NULL);
 }
 
+static void configure_grocery_fresh(ShrinkWorld *world)
+{
+    (void)place_some(world, SHRINK_FIXTURE_CAMERA, 1U);
+    (void)shrink_hire_employee(world, SHRINK_EMPLOYEE_STOCKER, 19.5, NULL);
+    (void)shrink_hire_employee(world, SHRINK_EMPLOYEE_ASSOCIATE, 18.0, NULL);
+}
+
+static void configure_troubled_store(ShrinkWorld *world)
+{
+    remove_cameras(world, 8U);
+    fire_one_role(world, SHRINK_EMPLOYEE_CASHIER);
+    fire_one_role(world, SHRINK_EMPLOYEE_SECURITY);
+}
+
 ShrinkWorld *shrink_scenario_create(const ShrinkScenarioInfo *scenario, uint64_t variation)
 {
     if (scenario == NULL) return NULL;
@@ -119,6 +154,8 @@ ShrinkWorld *shrink_scenario_create(const ShrinkScenarioInfo *scenario, uint64_t
         case 2U: configure_electronics(world); break;
         case 3U: configure_big_box(world); break;
         case 4U: configure_pharmacy(world); break;
+        case 5U: configure_grocery_fresh(world); break;
+        case 6U: configure_troubled_store(world); break;
         default: break;
     }
 
