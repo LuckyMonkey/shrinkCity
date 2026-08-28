@@ -1,24 +1,48 @@
 #define _POSIX_C_SOURCE 200809L
 #include "shrink.h"
+#include "scenario.h"
 
 #include <inttypes.h>
+#include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <poll.h>
-#include <unistd.h>
 #include <time.h>
+#include <unistd.h>
+
+#define STREAM_ENTITY_HISTORY 128U
+
+typedef struct StreamHistory {
+    ShrinkMetrics metrics;
+    uint64_t entity_ids[STREAM_ENTITY_HISTORY];
+    size_t entity_count;
+    int initialized;
+} StreamHistory;
 
 static void usage(const char *name)
 {
-    fprintf(stderr, "Usage: %s [--days N] [--seed N] [--stream --ticks N]\n", name);
+    fprintf(stderr,
+            "Usage: %s [--days N] [--seed N] [--scenario SLUG] "
+            "[--stream --ticks N] [--list-scenarios]\n", name);
+}
+
+static void print_scenarios(void)
+{
+    for (size_t i = 0U; i < shrink_scenario_count(); ++i) {
+        const ShrinkScenarioInfo *scenario = shrink_scenario_at(i);
+        printf("SCENARIO_DEF %u %s %u %d %.2f %" PRIu64 "\n",
+               scenario->id, scenario->slug, scenario->difficulty,
+               (int)scenario->goal_type, scenario->goal_value,
+               scenario->canonical_seed);
+    }
 }
 
 static ShrinkFixtureType fixture_type(const char *name)
 {
     const char *names[] = {"shelf", "shelf_bin", "short_shelf", "locked_shelf", "clearance", "register", "self_checkout", "camera", "entrance", "exit", "rfid_station", "locked_case"};
     const ShrinkFixtureType types[] = {SHRINK_FIXTURE_SHELF, SHRINK_FIXTURE_BIN, SHRINK_FIXTURE_SHORT_SHELF, SHRINK_FIXTURE_LOCKED_SHELF, SHRINK_FIXTURE_CLEARANCE, SHRINK_FIXTURE_REGISTER, SHRINK_FIXTURE_SELF_CHECKOUT, SHRINK_FIXTURE_CAMERA, SHRINK_FIXTURE_ENTRANCE, SHRINK_FIXTURE_EXIT, SHRINK_FIXTURE_RFID_STATION, SHRINK_FIXTURE_LOCKED_CASE};
-    for (size_t i = 0; i < sizeof(types) / sizeof(types[0]); ++i) if (strcmp(name, names[i]) == 0) return types[i];
+    for (size_t i = 0; i < sizeof(types) / sizeof(types[0]); ++i)
+        if (strcmp(name, names[i]) == 0) return types[i];
     return 0;
 }
 
@@ -80,16 +104,56 @@ static void stream_geometry(const ShrinkWorld *world)
     for (int y = 0; y < info.height; ++y) printf("FLOOR %d %u\n", y, shrink_floor_row(world, y));
     for (size_t i = 0; i < info.room_count; ++i) {
         ShrinkRoomSnapshot room;
-        if (shrink_room_snapshot(world, i, &room)) printf("ROOM %llu %d %d %d %d %d %d %d\n", (unsigned long long)room.id, (int)room.type, room.x, room.y, room.width, room.height, room.customer_accessible, room.staff_accessible);
+        if (shrink_room_snapshot(world, i, &room))
+            printf("ROOM %llu %d %d %d %d %d %d %d\n", (unsigned long long)room.id, (int)room.type, room.x, room.y, room.width, room.height, room.customer_accessible, room.staff_accessible);
     }
     for (size_t i = 0; i < info.wall_count; ++i) {
         ShrinkWallSnapshot wall;
-        if (shrink_wall_snapshot(world, i, &wall)) printf("WALL %llu %d %d %d %d\n", (unsigned long long)wall.id, wall.ax, wall.ay, wall.bx, wall.by);
+        if (shrink_wall_snapshot(world, i, &wall))
+            printf("WALL %llu %d %d %d %d\n", (unsigned long long)wall.id, wall.ax, wall.ay, wall.bx, wall.by);
     }
     for (size_t i = 0; i < info.fixture_count; ++i) {
         ShrinkFixtureSnapshot fixture;
-        if (shrink_fixture_snapshot(world, i, &fixture)) printf("FIXTURE %llu %d %d %d %d %u %u %u %d\n", (unsigned long long)fixture.id, (int)fixture.type, fixture.x, fixture.y, (int)fixture.rotation, fixture.width, fixture.height, fixture.access_mask, fixture.product_id);
+        if (shrink_fixture_snapshot(world, i, &fixture))
+            printf("FIXTURE %llu %d %d %d %d %u %u %u %d\n", (unsigned long long)fixture.id, (int)fixture.type, fixture.x, fixture.y, (int)fixture.rotation, fixture.width, fixture.height, fixture.access_mask, fixture.product_id);
     }
+}
+
+static int history_contains(const StreamHistory *history, uint64_t id)
+{
+    for (size_t i = 0U; i < history->entity_count; ++i)
+        if (history->entity_ids[i] == id) return 1;
+    return 0;
+}
+
+static void stream_events(const ShrinkWorld *world, StreamHistory *history)
+{
+    ShrinkMetrics current;
+    shrink_metrics(world, &current);
+
+    uint64_t current_ids[STREAM_ENTITY_HISTORY];
+    size_t current_count = 0U;
+    for (size_t i = 0U; i < shrink_entity_count(world) && current_count < STREAM_ENTITY_HISTORY; ++i) {
+        ShrinkEntitySnapshot entity;
+        if (!shrink_entity_snapshot(world, i, &entity)) continue;
+        current_ids[current_count++] = entity.id;
+        if (!history_contains(history, entity.id))
+            printf("EVENT CUSTOMER_ENTERED %" PRIu64 " 1\n", entity.id);
+    }
+
+    if (history->initialized) {
+        if (current.purchases > history->metrics.purchases)
+            printf("EVENT PURCHASE 0 %" PRIu64 "\n", current.purchases - history->metrics.purchases);
+        if (current.thefts > history->metrics.thefts)
+            printf("EVENT THEFT_RECORDED 0 %" PRIu64 "\n", current.thefts - history->metrics.thefts);
+        if (current.abandoned > history->metrics.abandoned)
+            printf("EVENT CUSTOMER_ABANDONED 0 %" PRIu64 "\n", current.abandoned - history->metrics.abandoned);
+    }
+
+    history->metrics = current;
+    history->entity_count = current_count;
+    memcpy(history->entity_ids, current_ids, current_count * sizeof(current_ids[0]));
+    history->initialized = 1;
 }
 
 static void stream_frame(const ShrinkWorld *world)
@@ -129,20 +193,53 @@ int main(int argc, char **argv)
     unsigned stream_ticks = 600U;
     int stream = 0;
     int realtime = 0;
+    int list_scenarios = 0;
+    const char *scenario_slug = NULL;
+
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--days") == 0 && i + 1 < argc) days = (unsigned)strtoul(argv[++i], NULL, 10);
         else if (strcmp(argv[i], "--seed") == 0 && i + 1 < argc) seed = (uint64_t)strtoull(argv[++i], NULL, 10);
+        else if (strcmp(argv[i], "--scenario") == 0 && i + 1 < argc) scenario_slug = argv[++i];
+        else if (strcmp(argv[i], "--list-scenarios") == 0) list_scenarios = 1;
         else if (strcmp(argv[i], "--stream") == 0) stream = 1;
         else if (strcmp(argv[i], "--realtime") == 0) realtime = 1;
         else if (strcmp(argv[i], "--ticks") == 0 && i + 1 < argc) stream_ticks = (unsigned)strtoul(argv[++i], NULL, 10);
         else { usage(argv[0]); return 2; }
     }
-    ShrinkWorld *world = shrink_create(seed);
-    if (world == NULL) { fputs("Unable to create simulation\n", stderr); return 1; }
+
+    if (list_scenarios) {
+        print_scenarios();
+        return 0;
+    }
+
+    const ShrinkScenarioInfo *scenario = NULL;
+    ShrinkWorld *world = NULL;
+    if (scenario_slug != NULL) {
+        scenario = shrink_scenario_find(scenario_slug);
+        if (scenario == NULL) {
+            fprintf(stderr, "Unknown scenario: %s\n", scenario_slug);
+            print_scenarios();
+            return 2;
+        }
+        world = shrink_scenario_create(scenario, seed);
+    } else {
+        world = shrink_create(seed);
+    }
+
+    if (world == NULL) {
+        fputs("Unable to create simulation\n", stderr);
+        return 1;
+    }
+
     if (stream) {
+        StreamHistory history;
+        memset(&history, 0, sizeof(history));
+        if (scenario != NULL)
+            printf("SCENARIO %u %s %u %d %.2f\n", scenario->id, scenario->slug, scenario->difficulty, (int)scenario->goal_type, scenario->goal_value);
         for (unsigned tick = 0; tick < stream_ticks; ++tick) {
             process_commands(world);
             shrink_tick(world, 1.0);
+            stream_events(world, &history);
             stream_frame(world);
             if (realtime) {
                 const struct timespec delay = {0, 50000000L};
@@ -152,10 +249,13 @@ int main(int argc, char **argv)
         shrink_destroy(world);
         return 0;
     }
+
     for (unsigned day = 0; day < days; ++day)
         for (unsigned second = 0; second < 600U; ++second) shrink_tick(world, 1.0);
+
     ShrinkMetrics m;
     shrink_metrics(world, &m);
+    if (scenario != NULL) printf("Scenario: %s\n", scenario->title);
     printf("Shrink City simulation\nSeed: %" PRIu64 "\nTicks: %" PRIu64 "\n\n", seed, shrink_tick_count(world));
     printf("Customers entered: %" PRIu64 "\nPurchases: %" PRIu64 "\nAbandoned: %" PRIu64 "\nThefts: %" PRIu64 "\n\n", m.customers_entered, m.purchases, m.abandoned, m.thefts);
     printf("Revenue: $%.2f\nCOGS: $%.2f\nShrink: $%.2f\nLabor: $%.2f\nSecurity: $%.2f\nProfit: $%.2f\n\n", m.revenue, m.cost_of_goods, m.stolen_value, m.labor_cost, m.security_cost, m.profit);
