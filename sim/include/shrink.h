@@ -68,7 +68,8 @@ typedef enum ShrinkEntityState {
     SHRINK_ENTITY_TO_PRODUCT = 1,
     SHRINK_ENTITY_WAITING,
     SHRINK_ENTITY_CHECKOUT,
-    SHRINK_ENTITY_LEAVING
+    SHRINK_ENTITY_LEAVING,
+    SHRINK_ENTITY_EVACUATING
 } ShrinkEntityState;
 
 typedef enum ShrinkCustomerArchetype {
@@ -131,8 +132,52 @@ typedef enum ShrinkEventType {
     SHRINK_EVENT_SECURITY_INTERVENTION,
     SHRINK_EVENT_THEFT_EXITED,
     SHRINK_EVENT_CHECKOUT_ABANDONED,
-    SHRINK_EVENT_STOCKOUT
+    SHRINK_EVENT_STOCKOUT,
+    SHRINK_EVENT_FIRE_STARTED,
+    SHRINK_EVENT_FIRE_RESOLVED,
+    SHRINK_EVENT_HAZARD_CREATED,
+    SHRINK_EVENT_HAZARD_CLEARED,
+    SHRINK_EVENT_CUSTOMER_EVACUATING,
+    SHRINK_EVENT_VEHICLE_IMPACT,
+    SHRINK_EVENT_ROBBERY_STARTED,
+    SHRINK_EVENT_ROBBERY_RESOLVED
 } ShrinkEventType;
+
+typedef enum ShrinkHazardType {
+    SHRINK_HAZARD_FIRE = 1,
+    SHRINK_HAZARD_SMOKE,
+    SHRINK_HAZARD_DEBRIS,
+    SHRINK_HAZARD_WATER,
+    SHRINK_HAZARD_DAMAGED_FLOOR,
+    SHRINK_HAZARD_CLOSED
+} ShrinkHazardType;
+
+typedef struct ShrinkHazardSnapshot {
+    uint64_t id;
+    ShrinkHazardType type;
+    int x, y;
+    unsigned severity;
+    uint64_t expires_tick;
+} ShrinkHazardSnapshot;
+
+typedef enum ShrinkScriptedEventType {
+    SHRINK_SCRIPT_FIRE = 1,
+    SHRINK_SCRIPT_VEHICLE_IMPACT,
+    SHRINK_SCRIPT_ROBBERY,
+    SHRINK_SCRIPT_POWER_OUTAGE,
+    SHRINK_SCRIPT_REFRIGERATION_FAILURE,
+    SHRINK_SCRIPT_FLOOD,
+    SHRINK_SCRIPT_DELIVERY_ACCIDENT,
+    SHRINK_SCRIPT_THEFT_SURGE
+} ShrinkScriptedEventType;
+
+typedef struct ShrinkScenarioEventDef {
+    ShrinkScriptedEventType type;
+    uint64_t trigger_tick;
+    int target_x, target_y;
+    unsigned severity;
+    unsigned duration;
+} ShrinkScenarioEventDef;
 
 typedef struct ShrinkEvent {
     uint64_t tick;
@@ -159,6 +204,9 @@ typedef struct ShrinkMetrics {
     double profit;
     double average_checkout_wait;
     double average_satisfaction;
+    double incident_damage_cost;
+    double merchandise_damage;
+    double emergency_closure_seconds;
     double cost_of_goods;
     double security_cost;
     uint64_t active_employees;
@@ -175,6 +223,9 @@ int shrink_entity_snapshot(const ShrinkWorld *world, size_t index,
 size_t shrink_event_count(const ShrinkWorld *world);
 int shrink_event_snapshot(const ShrinkWorld *world, size_t index, ShrinkEvent *out_event);
 void shrink_events_clear(ShrinkWorld *world);
+size_t shrink_hazard_count(const ShrinkWorld *world);
+int shrink_hazard_snapshot(const ShrinkWorld *world, size_t index, ShrinkHazardSnapshot *out_hazard);
+int shrink_schedule_scripted_event(ShrinkWorld *world, ShrinkScenarioEventDef event_def);
 size_t shrink_employee_count(const ShrinkWorld *world);
 int shrink_employee_snapshot(const ShrinkWorld *world, size_t index, ShrinkEmployeeSnapshot *out_snapshot);
 ShrinkStaffResult shrink_hire_employee(ShrinkWorld *world, ShrinkEmployeeRole role, double wage, uint64_t *out_id);

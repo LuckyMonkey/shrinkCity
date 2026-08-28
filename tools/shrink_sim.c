@@ -108,6 +108,11 @@ static void stream_geometry(const ShrinkWorld *world)
         if (shrink_fixture_snapshot(world, i, &fixture))
             printf("FIXTURE %llu %d %d %d %d %u %u %u %d\n", (unsigned long long)fixture.id, (int)fixture.type, fixture.x, fixture.y, (int)fixture.rotation, fixture.width, fixture.height, fixture.access_mask, fixture.product_id);
     }
+    for (size_t i = 0; i < shrink_hazard_count(world); ++i) {
+        ShrinkHazardSnapshot hazard;
+        if (shrink_hazard_snapshot(world, i, &hazard))
+            printf("HAZARD %llu %d %d %d %u %llu\n", (unsigned long long)hazard.id, (int)hazard.type, hazard.x, hazard.y, hazard.severity, (unsigned long long)hazard.expires_tick);
+    }
 }
 
 static const char *event_name(ShrinkEventType type)
@@ -123,6 +128,14 @@ static const char *event_name(ShrinkEventType type)
         case SHRINK_EVENT_THEFT_EXITED: return "THEFT_EXITED";
         case SHRINK_EVENT_CHECKOUT_ABANDONED: return "CHECKOUT_ABANDONED";
         case SHRINK_EVENT_STOCKOUT: return "STOCKOUT";
+        case SHRINK_EVENT_FIRE_STARTED: return "FIRE_STARTED";
+        case SHRINK_EVENT_FIRE_RESOLVED: return "FIRE_RESOLVED";
+        case SHRINK_EVENT_HAZARD_CREATED: return "HAZARD_CREATED";
+        case SHRINK_EVENT_HAZARD_CLEARED: return "HAZARD_CLEARED";
+        case SHRINK_EVENT_CUSTOMER_EVACUATING: return "CUSTOMER_EVACUATING";
+        case SHRINK_EVENT_VEHICLE_IMPACT: return "VEHICLE_IMPACT";
+        case SHRINK_EVENT_ROBBERY_STARTED: return "ROBBERY_STARTED";
+        case SHRINK_EVENT_ROBBERY_RESOLVED: return "ROBBERY_RESOLVED";
         default: return "UNKNOWN";
     }
 }

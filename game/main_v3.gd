@@ -27,6 +27,7 @@ func start_scenario(slug: String) -> void:
     entities.clear()
     fixtures.clear()
     walls.clear()
+    hazards.clear()
     rooms.clear()
     employees.clear()
     floor_rows.clear()

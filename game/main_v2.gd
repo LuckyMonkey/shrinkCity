@@ -9,6 +9,7 @@ var feedback_time := 0.0
 var entities: Dictionary = {}
 var fixtures: Array[Dictionary] = []
 var walls: Array[Dictionary] = []
+var hazards: Array[Dictionary] = []
 var rooms: Array[Dictionary] = []
 var floor_rows: Array[int] = []
 var metrics := {}
@@ -86,7 +87,7 @@ func _consume_line(line: String) -> void:
             if f.size() >= 3:
                 geometry_width = int(f[1]); geometry_height = int(f[2])
                 layout_id = int(f[5]) if f.size() >= 6 else 0
-                floor_rows.clear(); fixtures.clear(); rooms.clear(); walls.clear(); employees.clear()
+                floor_rows.clear(); fixtures.clear(); rooms.clear(); walls.clear(); hazards.clear(); employees.clear()
                 for _y in range(geometry_height): floor_rows.append(0)
         "FLOOR":
             if f.size() >= 3:
@@ -98,6 +99,9 @@ func _consume_line(line: String) -> void:
         "WALL":
             if f.size() >= 6:
                 walls.append({"id":int(f[1]), "a":Vector2(int(f[2]), int(f[3])), "b":Vector2(int(f[4]), int(f[5]))})
+        "HAZARD":
+            if f.size() >= 7:
+                hazards.append({"id":int(f[1]), "type":int(f[2]), "x":int(f[3]), "y":int(f[4]), "severity":int(f[5]), "expires":int(f[6])})
         "FIXTURE":
             if f.size() >= 6:
                 fixtures.append({"id":int(f[1]), "kind":_kind_from_type(int(f[2])), "x":int(f[3]), "y":int(f[4]), "rotation":int(f[5]), "width":int(f[6]) if f.size() >= 7 else 1, "height":int(f[7]) if f.size() >= 8 else 1, "access":int(f[8]) if f.size() >= 9 else 0, "product":int(f[9]) if f.size() >= 10 else -1})
@@ -160,6 +164,7 @@ func _draw() -> void:
     draw_set_transform(view_offset, 0.0, Vector2(zoom,zoom))
     _draw_site()
     _draw_floor()
+    _draw_hazards()
     _draw_rooms()
     _draw_building_edges()
     _draw_walls()
@@ -216,6 +221,18 @@ func _draw_floor() -> void:
             # Suppress most grid noise; only subtle seams remain.
             draw_polyline(PackedVector2Array([c+Vector2(0,-10),c+Vector2(20,0),c+Vector2(0,10),c+Vector2(-20,0),c+Vector2(0,-10)]), Color(0.25,0.22,0.18,0.10), 0.55)
             if x >= 3 and x <= 18 and y % 4 == 0: draw_line(c + Vector2(-8, 0), c + Vector2(8, 0), Color(0.72,0.64,0.48,0.18), 1.2)
+
+func _draw_hazards() -> void:
+    for hazard in hazards:
+        var p := _iso(Vector2(int(hazard.x), int(hazard.y)))
+        var hazard_type := int(hazard.type)
+        var color := Color("#e05b4f") if hazard_type == 1 else Color("#8a7d86")
+        if hazard_type == 2: color = Color("#a99cae")
+        elif hazard_type == 4: color = Color("#68aab1")
+        draw_colored_polygon(_diamond(p, 2.0), Color(color, 0.82))
+        if hazard_type == 1:
+            draw_circle(p + Vector2(0, -12), 5.0, Color("#f3a33e"))
+            draw_circle(p + Vector2(4, -18), 3.0, Color("#ffe2a1"))
 
 func _room_color(room_type: int) -> Color:
     var colors := {1:Color("#d4b06b"), 2:Color("#8fa69a"), 3:Color("#807b76"), 4:Color("#8a7468"), 5:Color("#756b83"), 6:Color("#6c9aa5")}

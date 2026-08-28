@@ -111,7 +111,7 @@ A good strategy should depend on store type, merchandise, traffic, layout, and g
 
 The live C core now emits a bounded event stream instead of asking the CLI or Godot to infer incidents from metric changes. A suspicious merchandise decision produces `THEFT_ATTEMPTED`; local camera coverage may produce `THEFT_DETECTED` and `SECURITY_RESPONDING`; reaching the exit produces either `SECURITY_INTERVENTION` or `THEFT_EXITED`. Purchases emit `PURCHASE_COMPLETED`. These records carry stable IDs and values for deterministic incident feeds.
 
-Official scripted disasters are intentionally a separate future track from emergent events. They will be authored per scenario as bounded deterministic records with C-owned hazards, damage, closures, and evacuation consequences. Sandbox levels will initially remain unscripted.
+Official scripted disasters are separate from emergent events and now have a bounded C-authored track foundation. Grocery Fresh and Troubled Store schedule deterministic fire incidents; C creates expiring fire/smoke hazards, blocks routing, evacuates nearby shoppers, accounts for damage, and emits resolution events. Vehicle impact, robbery, outages, and other incident tracks remain future additions. Sandbox levels remain unscripted.
 
 ## Simulation/event architecture
 

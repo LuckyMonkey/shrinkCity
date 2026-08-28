@@ -159,6 +159,13 @@ ShrinkWorld *shrink_scenario_create(const ShrinkScenarioInfo *scenario, uint64_t
         default: break;
     }
 
+    /* Official incidents are bounded authored tracks; user levels do not use this API yet. */
+    if (scenario->id == 5U) {
+        (void)shrink_schedule_scripted_event(world, (ShrinkScenarioEventDef){SHRINK_SCRIPT_FIRE, 180U, 10, 12, 2U, 45U});
+    } else if (scenario->id == 6U) {
+        (void)shrink_schedule_scripted_event(world, (ShrinkScenarioEventDef){SHRINK_SCRIPT_FIRE, 120U, 8, 10, 1U, 30U});
+    }
+
     /* Keep the helper referenced in sanitizer builds while layout APIs settle. */
     int x = 0, y = 0;
     (void)first_open_cell(world, &x, &y);

@@ -16,6 +16,15 @@ static unsigned count_type(const ShrinkWorld *world, ShrinkFixtureType type)
     return count;
 }
 
+static int has_event(const ShrinkWorld *world, ShrinkEventType type)
+{
+    for (size_t i = 0U; i < shrink_event_count(world); ++i) {
+        ShrinkEvent event;
+        if (shrink_event_snapshot(world, i, &event) && event.type == type) return 1;
+    }
+    return 0;
+}
+
 static unsigned count_role(const ShrinkWorld *world, ShrinkEmployeeRole role)
 {
     unsigned count = 0U;
@@ -75,6 +84,16 @@ int main(void)
     assert(shrink_employee_count(grocery) > shrink_employee_count(troubled));
     assert(count_type(troubled, SHRINK_FIXTURE_CAMERA) < count_type(electronics, SHRINK_FIXTURE_CAMERA));
     assert(count_role(troubled, SHRINK_EMPLOYEE_SECURITY) == 0U);
+
+    for (unsigned tick = 0U; tick < 180U; ++tick) shrink_tick(grocery, 1.0);
+    assert(has_event(grocery, SHRINK_EVENT_FIRE_STARTED));
+    assert(shrink_hazard_count(grocery) > 0U);
+    ShrinkHazardSnapshot hazard;
+    assert(shrink_hazard_snapshot(grocery, 0U, &hazard) == 1);
+    assert(hazard.type == SHRINK_HAZARD_FIRE && hazard.expires_tick > 180U);
+    for (unsigned tick = 0U; tick < 45U; ++tick) shrink_tick(grocery, 1.0);
+    assert(shrink_hazard_count(grocery) == 0U);
+    assert(has_event(grocery, SHRINK_EVENT_FIRE_RESOLVED));
 
     shrink_destroy(corner);
     shrink_destroy(electronics);

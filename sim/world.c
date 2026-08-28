@@ -15,6 +15,8 @@
 #define MAX_EMPLOYEES 16U
 #define GUARD_STEP_TICKS 2U
 #define MAX_EVENTS 256U
+#define MAX_HAZARDS 128U
+#define MAX_SCRIPTED_EVENTS 8U
 
 typedef struct ShrinkBalanceConfig {
     double spawn_interval;
@@ -35,7 +37,8 @@ typedef enum CustomerState {
     CUSTOMER_DECIDING,
     CUSTOMER_WAITING,
     CUSTOMER_CHECKOUT,
-    CUSTOMER_LEAVING
+    CUSTOMER_LEAVING,
+    CUSTOMER_EVACUATING
 } CustomerState;
 
 typedef struct Product {
@@ -96,12 +99,21 @@ struct ShrinkWorld {
     Employee employees[MAX_EMPLOYEES];
     size_t employee_count;
     uint64_t next_employee_id;
+    ShrinkHazardSnapshot hazards[MAX_HAZARDS];
+    size_t hazard_count;
+    uint64_t next_hazard_id;
+    struct {
+        ShrinkScenarioEventDef def;
+        unsigned triggered;
+    } scripted_events[MAX_SCRIPTED_EVENTS];
+    size_t scripted_event_count;
+    unsigned fire_active;
     ShrinkEvent events[MAX_EVENTS];
     size_t event_head;
     size_t event_count;
 };
 
-static void emit_event(ShrinkWorld *world, ShrinkEventType type, const Customer *customer, uint64_t fixture_id, double value)
+static void emit_event_at(ShrinkWorld *world, ShrinkEventType type, const Customer *customer, uint64_t fixture_id, int x, int y, double value)
 {
     const size_t slot = (world->event_head + world->event_count) % MAX_EVENTS;
     if (world->event_count == MAX_EVENTS) {
@@ -111,9 +123,67 @@ static void emit_event(ShrinkWorld *world, ShrinkEventType type, const Customer 
     world->events[slot] = (ShrinkEvent){world->ticks, type,
         customer != NULL ? customer->id : 0U, fixture_id,
         customer != NULL ? (int)customer->product : -1,
-        customer != NULL ? (int)lround(customer->x) : 0,
-        customer != NULL ? (int)lround(customer->y) : 0, value};
+        customer != NULL ? (int)lround(customer->x) : x,
+        customer != NULL ? (int)lround(customer->y) : y, value};
     ++world->event_count;
+}
+
+static void emit_event(ShrinkWorld *world, ShrinkEventType type, const Customer *customer, uint64_t fixture_id, double value)
+{
+    const int x = customer != NULL ? (int)lround(customer->x) : 0;
+    const int y = customer != NULL ? (int)lround(customer->y) : 0;
+    emit_event_at(world, type, customer, fixture_id, x, y, value);
+}
+
+static int manhattan(int ax, int ay, int bx, int by);
+
+static int hazard_blocks(ShrinkHazardType type)
+{
+    return type == SHRINK_HAZARD_FIRE || type == SHRINK_HAZARD_DEBRIS ||
+           type == SHRINK_HAZARD_WATER || type == SHRINK_HAZARD_CLOSED;
+}
+
+static void create_hazard(ShrinkWorld *world, ShrinkHazardType type, int x, int y, unsigned severity, uint64_t expires_tick)
+{
+    if (world->hazard_count >= MAX_HAZARDS || x < 0 || y < 0 || x >= world->geometry.width || y >= world->geometry.height ||
+        !world->geometry.floor[y * world->geometry.width + x]) return;
+    ShrinkHazardSnapshot hazard = {++world->next_hazard_id, type, x, y, severity, expires_tick};
+    world->hazards[world->hazard_count++] = hazard;
+    emit_event_at(world, SHRINK_EVENT_HAZARD_CREATED, NULL, hazard.id, x, y, (double)severity);
+}
+
+static unsigned hazard_count_of(const ShrinkWorld *world, ShrinkHazardType type)
+{
+    unsigned count = 0U;
+    for (size_t i = 0U; i < world->hazard_count; ++i) count += world->hazards[i].type == type;
+    return count;
+}
+
+static int hazard_near(const ShrinkWorld *world, int x, int y, unsigned radius)
+{
+    for (size_t i = 0U; i < world->hazard_count; ++i) {
+        const ShrinkHazardSnapshot *hazard = &world->hazards[i];
+        if (hazard_blocks(hazard->type) && manhattan(x, y, hazard->x, hazard->y) <= (int)radius) return 1;
+    }
+    return 0;
+}
+
+static void expire_hazards(ShrinkWorld *world)
+{
+    size_t write = 0U;
+    for (size_t i = 0U; i < world->hazard_count; ++i) {
+        const ShrinkHazardSnapshot hazard = world->hazards[i];
+        if (hazard.expires_tick != 0U && world->ticks >= hazard.expires_tick) {
+            emit_event_at(world, SHRINK_EVENT_HAZARD_CLEARED, NULL, hazard.id, hazard.x, hazard.y, 0.0);
+            continue;
+        }
+        world->hazards[write++] = hazard;
+    }
+    world->hazard_count = write;
+    if (world->fire_active && hazard_count_of(world, SHRINK_HAZARD_FIRE) == 0U) {
+        world->fire_active = 0U;
+        emit_event(world, SHRINK_EVENT_FIRE_RESOLVED, NULL, 0U, 0.0);
+    }
 }
 
 static uint64_t rng_next(ShrinkWorld *world)
@@ -338,6 +408,15 @@ static void begin_leaving(ShrinkWorld *world, Customer *customer)
     (void)set_direct_target(world, customer, SHRINK_FIXTURE_EXIT);
 }
 
+static void cancel_checkout(ShrinkWorld *world, uint64_t customer_id)
+{
+    for (unsigned lane = 0U; lane < REGISTER_COUNT; ++lane) {
+        if (world->register_customer[lane] != customer_id) continue;
+        world->register_customer[lane] = 0U;
+        world->register_timer[lane] = 0.0;
+    }
+}
+
 static void spawn_customer(ShrinkWorld *world)
 {
     if (world->active_customers >= MAX_CUSTOMERS) return;
@@ -512,6 +591,40 @@ static void update_registers(ShrinkWorld *world, double dt)
     }
 }
 
+static void trigger_scripted_event(ShrinkWorld *world, const ShrinkScenarioEventDef *def)
+{
+    const uint64_t expires = world->ticks + (uint64_t)def->duration;
+    if (def->type == SHRINK_SCRIPT_FIRE) {
+        world->fire_active = 1U;
+        emit_event_at(world, SHRINK_EVENT_FIRE_STARTED, NULL, 0U, def->target_x, def->target_y, (double)def->severity);
+        for (int dy = -1; dy <= 1; ++dy)
+            for (int dx = -1; dx <= 1; ++dx)
+                if (abs(dx) + abs(dy) <= 1) create_hazard(world, SHRINK_HAZARD_FIRE, def->target_x + dx, def->target_y + dy, def->severity, expires);
+        for (int dy = -2; dy <= 2; ++dy)
+            for (int dx = -2; dx <= 2; ++dx)
+                if (abs(dx) + abs(dy) == 2) create_hazard(world, SHRINK_HAZARD_SMOKE, def->target_x + dx, def->target_y + dy, def->severity, expires);
+    }
+}
+
+static void process_scripted_events(ShrinkWorld *world)
+{
+    for (size_t i = 0U; i < world->scripted_event_count; ++i) {
+        if (world->scripted_events[i].triggered || world->ticks < world->scripted_events[i].def.trigger_tick) continue;
+        world->scripted_events[i].triggered = 1U;
+        trigger_scripted_event(world, &world->scripted_events[i].def);
+    }
+}
+
+static void update_fire_damage(ShrinkWorld *world, double dt)
+{
+    for (size_t h = 0U; h < world->hazard_count; ++h) {
+        const ShrinkHazardSnapshot *hazard = &world->hazards[h];
+        if (hazard->type != SHRINK_HAZARD_FIRE) continue;
+        world->metrics.merchandise_damage += 0.12 * (double)hazard->severity * dt;
+        world->metrics.incident_damage_cost += 0.08 * (double)hazard->severity * dt;
+    }
+}
+
 static void update_security_staff(ShrinkWorld *world, const unsigned char *blocked)
 {
     if (world->ticks % GUARD_STEP_TICKS != 0U) return;
@@ -588,8 +701,13 @@ void shrink_tick(ShrinkWorld *world, double dt_seconds)
     world->metrics.security_cost += camera_count * BALANCE.camera_maintenance_per_second * dt_seconds;
     world->spawn_timer -= dt_seconds;
 
+    process_scripted_events(world);
+    expire_hazards(world);
+    update_fire_damage(world, dt_seconds);
     unsigned char blocked[SHRINK_MAX_CELLS];
     shrink_geometry_blocked_map(&world->geometry, blocked);
+    for (size_t h = 0U; h < world->hazard_count; ++h)
+        if (hazard_blocks(world->hazards[h].type)) blocked[world->hazards[h].y * world->geometry.width + world->hazards[h].x] = 1U;
     update_security_staff(world, blocked);
 
     if (world->time < OPEN_SECONDS_PER_DAY && world->spawn_timer <= 0.0) {
@@ -600,6 +718,14 @@ void shrink_tick(ShrinkWorld *world, double dt_seconds)
     for (size_t i = 0; i < MAX_CUSTOMERS; ++i) {
         Customer *customer = &world->customers[i];
         if (customer->state == CUSTOMER_UNUSED) continue;
+        if (customer->state != CUSTOMER_LEAVING && customer->state != CUSTOMER_EVACUATING &&
+            hazard_near(world, (int)lround(customer->x), (int)lround(customer->y), 2U)) {
+            cancel_checkout(world, customer->id);
+            customer->state = CUSTOMER_EVACUATING;
+            (void)set_direct_target(world, customer, SHRINK_FIXTURE_EXIT);
+            customer->satisfaction -= 12.0;
+            emit_event(world, SHRINK_EVENT_CUSTOMER_EVACUATING, customer, customer->target_fixture_id, 0.0);
+        }
         if (customer->state == CUSTOMER_TO_PRODUCT) {
             if (!revalidate_product_target(world, customer)) {
                 world->metrics.abandoned++;
@@ -607,7 +733,7 @@ void shrink_tick(ShrinkWorld *world, double dt_seconds)
                 begin_leaving(world, customer);
             }
         }
-        if (customer->state == CUSTOMER_TO_PRODUCT || customer->state == CUSTOMER_LEAVING)
+        if (customer->state == CUSTOMER_TO_PRODUCT || customer->state == CUSTOMER_LEAVING || customer->state == CUSTOMER_EVACUATING)
             move_toward(customer, dt_seconds, blocked, world->geometry.width, world->geometry.height);
         if (customer->state == CUSTOMER_TO_PRODUCT && reached_target(customer)) {
             if (!revalidate_product_target(world, customer)) continue;
@@ -621,7 +747,7 @@ void shrink_tick(ShrinkWorld *world, double dt_seconds)
                 world->metrics.abandoned++;
                 begin_leaving(world, customer);
             }
-        } else if (customer->state == CUSTOMER_LEAVING && reached_target(customer)) {
+        } else if ((customer->state == CUSTOMER_LEAVING || customer->state == CUSTOMER_EVACUATING) && reached_target(customer)) {
             if (customer->theft_attempted) {
                 if (customer->theft_detected) {
                     int guard_nearby = 0;
@@ -649,7 +775,8 @@ void shrink_tick(ShrinkWorld *world, double dt_seconds)
 
     update_registers(world, dt_seconds);
     assign_queues(world);
-    world->metrics.profit = world->metrics.revenue - world->metrics.cost_of_goods - world->metrics.stolen_value - world->metrics.labor_cost - world->metrics.security_cost;
+    world->metrics.emergency_closure_seconds += hazard_count_of(world, SHRINK_HAZARD_FIRE) > 0U ? dt_seconds : 0.0;
+    world->metrics.profit = world->metrics.revenue - world->metrics.cost_of_goods - world->metrics.stolen_value - world->metrics.labor_cost - world->metrics.security_cost - world->metrics.incident_damage_cost - world->metrics.merchandise_damage;
     world->metrics.average_checkout_wait = world->metrics.purchases == 0U ? 0.0 : world->checkout_wait_sum / (double)world->metrics.purchases;
     world->metrics.average_satisfaction = world->satisfaction_count == 0U ? 100.0 : world->satisfaction_sum / (double)world->satisfaction_count;
     world->metrics.active_employees = (uint64_t)world->employee_count;
@@ -679,7 +806,8 @@ int shrink_entity_snapshot(const ShrinkWorld *world, size_t index, ShrinkEntityS
         out_snapshot->product = customer->product;
         out_snapshot->state = customer->state == CUSTOMER_TO_PRODUCT ? SHRINK_ENTITY_TO_PRODUCT :
             customer->state == CUSTOMER_WAITING ? SHRINK_ENTITY_WAITING :
-            customer->state == CUSTOMER_CHECKOUT ? SHRINK_ENTITY_CHECKOUT : SHRINK_ENTITY_LEAVING;
+            customer->state == CUSTOMER_CHECKOUT ? SHRINK_ENTITY_CHECKOUT :
+            customer->state == CUSTOMER_EVACUATING ? SHRINK_ENTITY_EVACUATING : SHRINK_ENTITY_LEAVING;
         out_snapshot->target_fixture_id = customer->target_fixture_id;
         out_snapshot->target_x = (int)lround(customer->target_x);
         out_snapshot->target_y = (int)lround(customer->target_y);
@@ -826,4 +954,23 @@ int shrink_event_snapshot(const ShrinkWorld *world, size_t index, ShrinkEvent *o
 void shrink_events_clear(ShrinkWorld *world)
 {
     if (world != NULL) { world->event_head = 0U; world->event_count = 0U; }
+}
+
+size_t shrink_hazard_count(const ShrinkWorld *world)
+{
+    return world == NULL ? 0U : world->hazard_count;
+}
+
+int shrink_hazard_snapshot(const ShrinkWorld *world, size_t index, ShrinkHazardSnapshot *out_hazard)
+{
+    if (world == NULL || out_hazard == NULL || index >= world->hazard_count) return 0;
+    *out_hazard = world->hazards[index];
+    return 1;
+}
+
+int shrink_schedule_scripted_event(ShrinkWorld *world, ShrinkScenarioEventDef event_def)
+{
+    if (world == NULL || world->scripted_event_count >= MAX_SCRIPTED_EVENTS || event_def.type < SHRINK_SCRIPT_FIRE || event_def.type > SHRINK_SCRIPT_THEFT_SURGE || event_def.duration == 0U) return 0;
+    world->scripted_events[world->scripted_event_count++].def = event_def;
+    return 1;
 }

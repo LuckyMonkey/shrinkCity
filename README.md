@@ -56,7 +56,7 @@ Scenario variation seeds advance in multiples of the layout count so a scenario 
 
 ## Authoritative stream events
 
-The temporary text bridge now emits event records derived from authoritative simulation changes, including shopper entry, completed purchases, recorded thefts, and abandoned trips. These are intentionally small for the first pass; the next milestone is to move richer incident events directly into the C core (attempted theft, detection, intervention, assistance, stockouts, receiving, returns, spills, and other operations).
+The temporary text bridge drains event records owned by the C simulation, including shopper entry, product selection, theft stages, purchases, security response, fire/hazard creation, evacuation, and hazard resolution. Grocery Fresh and Troubled Store currently demonstrate the first scheduled C-authored fire track; additional official incidents remain roadmap work.
 
 ## Godot prototype
 

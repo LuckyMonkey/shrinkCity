@@ -79,12 +79,14 @@ This is the continuing project checklist for GPT/Codex passes. Items are checked
 
 Official scenario scripts are separate from ordinary emergent events and are not exposed to user-created levels initially.
 
-- [ ] Add bounded C-authored scripted-event records: trigger tick, type, target room/fixture/region, duration, severity, seed/subseed, and optional condition.
-- [ ] Add deterministic scenario incident tracks for car impact, fire, sprinkler activation, power outage, robbery, delivery accident, burst pipe/flood, alarm malfunction, coordinated theft rush, and severe weather/entrance closure.
+- [x] Add bounded C-authored scripted-event records with trigger tick, type, target cell, duration, and severity.
+- [ ] Add remaining deterministic scenario incident tracks: car impact, sprinkler/power, robbery, delivery accident, flood, alarm malfunction, theft surge, and severe weather.
 - [ ] Add simple validated conditions such as shrink/traffic/time thresholds; do not create a general scripting language.
-- [ ] Add hazard/temporary-obstruction cells for debris, fire, smoke, water, damaged floor, and closed aisles.
-- [ ] Integrate hazards into authoritative walkability/pathfinding and snapshots.
-- [ ] Implement fire consequences: unsafe cells, evacuation, merchandise damage, sprinklers, blocked operations, repair cost, and resolution.
+- [x] Add bounded authoritative fire/smoke hazard cells with expiration and snapshot support.
+- [ ] Add debris, water, damaged-floor, and temporary-closure hazard variants.
+- [x] Integrate fire/debris-style blocking hazards into authoritative walkability and stream snapshots.
+- [x] Implement a deterministic fire track with unsafe cells, customer evacuation, merchandise/incident damage cost, expiration, and resolution events.
+- [ ] Add sprinklers, employee emergency tasks, deeper merchandise damage, and repair operations.
 - [ ] Implement car-impact consequences: breached storefront, damaged/disabled fixtures, debris, entrance change, evacuation/panic, and repair cost.
 - [ ] Implement robbery consequences without combat: panic, employee task interruption, temporary closure, guard response, and cash/inventory loss.
 - [ ] Add authoritative damage states: normal, damaged, disabled, destroyed for walls, windows, fixtures, and hazards.
