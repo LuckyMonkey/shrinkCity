@@ -107,6 +107,12 @@ Examples:
 
 A good strategy should depend on store type, merchandise, traffic, layout, and goals. There should not be one universal security build.
 
+## Current incident loop
+
+The live C core now emits a bounded event stream instead of asking the CLI or Godot to infer incidents from metric changes. A suspicious merchandise decision produces `THEFT_ATTEMPTED`; local camera coverage may produce `THEFT_DETECTED` and `SECURITY_RESPONDING`; reaching the exit produces either `SECURITY_INTERVENTION` or `THEFT_EXITED`. Purchases emit `PURCHASE_COMPLETED`. These records carry stable IDs and values for deterministic incident feeds.
+
+Official scripted disasters are intentionally a separate future track from emergent events. They will be authored per scenario as bounded deterministic records with C-owned hazards, damage, closures, and evacuation consequences. Sandbox levels will initially remain unscripted.
+
 ## Simulation/event architecture
 
 The C simulation should grow an event stream alongside snapshots. Events are immutable facts such as CUSTOMER_ENTERED, ITEM_SELECTED, THEFT_ATTEMPTED, THEFT_DETECTED, THEFT_EXITED, CHECKOUT_STARTED, QUEUE_ABANDONED, ASSISTANCE_REQUESTED, DELIVERY_ARRIVED, STOCKOUT, RESTOCKED, RETURN_STARTED, SPILL_REPORTED, and SECURITY_INTERVENTION.

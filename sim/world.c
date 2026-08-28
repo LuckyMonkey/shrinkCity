@@ -14,6 +14,7 @@
 #define OPEN_SECONDS_PER_DAY 600.0
 #define MAX_EMPLOYEES 16U
 #define GUARD_STEP_TICKS 2U
+#define MAX_EVENTS 256U
 
 typedef struct ShrinkBalanceConfig {
     double spawn_interval;
@@ -60,6 +61,8 @@ typedef struct Customer {
     unsigned product;
     unsigned register_id;
     uint64_t id;
+    unsigned theft_attempted;
+    unsigned theft_detected;
 } Customer;
 
 typedef struct Employee {
@@ -93,7 +96,25 @@ struct ShrinkWorld {
     Employee employees[MAX_EMPLOYEES];
     size_t employee_count;
     uint64_t next_employee_id;
+    ShrinkEvent events[MAX_EVENTS];
+    size_t event_head;
+    size_t event_count;
 };
+
+static void emit_event(ShrinkWorld *world, ShrinkEventType type, const Customer *customer, uint64_t fixture_id, double value)
+{
+    const size_t slot = (world->event_head + world->event_count) % MAX_EVENTS;
+    if (world->event_count == MAX_EVENTS) {
+        world->event_head = (world->event_head + 1U) % MAX_EVENTS;
+        --world->event_count;
+    }
+    world->events[slot] = (ShrinkEvent){world->ticks, type,
+        customer != NULL ? customer->id : 0U, fixture_id,
+        customer != NULL ? (int)customer->product : -1,
+        customer != NULL ? (int)lround(customer->x) : 0,
+        customer != NULL ? (int)lround(customer->y) : 0, value};
+    ++world->event_count;
+}
 
 static uint64_t rng_next(ShrinkWorld *world)
 {
@@ -342,12 +363,16 @@ static void spawn_customer(ShrinkWorld *world)
                 customer->theft_tendency += 0.25;
             }
             customer->target_fixture_id = entrance->id;
+            customer->theft_attempted = 0U;
+            customer->theft_detected = 0U;
             customer->wait_seconds = 0.0;
             customer->satisfaction = 100.0;
             customer->product = (unsigned)(rng_next(world) % PRODUCT_COUNT);
             customer->id = ++world->next_customer_id;
             world->active_customers++;
             world->metrics.customers_entered++;
+            emit_event(world, SHRINK_EVENT_CUSTOMER_ENTERED, customer, entrance->id, 0.0);
+            emit_event(world, SHRINK_EVENT_ITEM_SELECTED, customer, 0U, 0.0);
             if (!set_product_target(world, customer)) {
                 world->metrics.abandoned++;
                 customer->satisfaction -= 25.0;
@@ -396,8 +421,20 @@ static void decide_purchase(ShrinkWorld *world, Customer *customer)
     const double deterrence = local_security_deterrence(world, (int)lround(customer->x), (int)lround(customer->y));
     const double theft_probability = product->theft_risk * (1.0 - deterrence) * (0.65 + customer->theft_tendency);
     if (random_unit(world) < theft_probability) {
-        world->metrics.thefts++;
-        world->metrics.stolen_value += product->price;
+        customer->theft_attempted = 1U;
+        world->metrics.theft_attempts++;
+        emit_event(world, SHRINK_EVENT_THEFT_ATTEMPTED, customer, customer->target_fixture_id, product->price);
+        unsigned cameras = 0U;
+        for (size_t i = 0U; i < world->geometry.fixture_count; ++i) {
+            const ShrinkFixture *camera = &world->geometry.fixtures[i];
+            if (camera->type == SHRINK_FIXTURE_CAMERA && manhattan((int)lround(customer->x), (int)lround(customer->y), camera->x, camera->y) <= BALANCE.camera_range) ++cameras;
+        }
+        if (cameras > 0U && random_unit(world) < fmin(0.90, 0.35 + 0.18 * (double)cameras)) {
+            customer->theft_detected = 1U;
+            world->metrics.thefts_detected++;
+            emit_event(world, SHRINK_EVENT_THEFT_DETECTED, customer, customer->target_fixture_id, product->price);
+            emit_event(world, SHRINK_EVENT_SECURITY_RESPONDING, customer, customer->target_fixture_id, 0.0);
+        }
         customer->satisfaction -= 18.0;
         begin_leaving(world, customer);
     } else {
@@ -463,6 +500,7 @@ static void update_registers(ShrinkWorld *world, double dt)
                 Product *product = &world->products[customer->product];
                 world->metrics.purchases++;
                 world->metrics.customers_served++;
+                emit_event(world, SHRINK_EVENT_PURCHASE_COMPLETED, customer, customer->target_fixture_id, product->price);
                 world->metrics.revenue += product->price;
                 world->metrics.cost_of_goods += product->cost;
                 world->checkout_wait_sum += customer->wait_seconds;
@@ -584,6 +622,25 @@ void shrink_tick(ShrinkWorld *world, double dt_seconds)
                 begin_leaving(world, customer);
             }
         } else if (customer->state == CUSTOMER_LEAVING && reached_target(customer)) {
+            if (customer->theft_attempted) {
+                if (customer->theft_detected) {
+                    int guard_nearby = 0;
+                    for (size_t e = 0U; e < world->employee_count; ++e)
+                        if (world->employees[e].role == SHRINK_EMPLOYEE_SECURITY && manhattan(world->employees[e].x, world->employees[e].y, (int)lround(customer->x), (int)lround(customer->y)) <= 5) guard_nearby = 1;
+                    if (guard_nearby && random_unit(world) < 0.55) {
+                        world->metrics.thefts_recovered++;
+                        emit_event(world, SHRINK_EVENT_SECURITY_INTERVENTION, customer, customer->target_fixture_id, world->products[customer->product].price);
+                    } else {
+                        world->metrics.thefts++;
+                        world->metrics.stolen_value += world->products[customer->product].price;
+                        emit_event(world, SHRINK_EVENT_THEFT_EXITED, customer, customer->target_fixture_id, world->products[customer->product].price);
+                    }
+                } else {
+                    world->metrics.thefts++;
+                    world->metrics.stolen_value += world->products[customer->product].price;
+                    emit_event(world, SHRINK_EVENT_THEFT_EXITED, customer, customer->target_fixture_id, world->products[customer->product].price);
+                }
+            }
             world->satisfaction_sum += fmax(0.0, customer->satisfaction);
             world->satisfaction_count++;
             finish_customer(world, customer);
@@ -752,4 +809,21 @@ ShrinkBuildResult shrink_try_remove_wall(ShrinkWorld *world, uint64_t id)
 int shrink_geometry_has_routes(const ShrinkWorld *world)
 {
     return world != NULL && shrink_geometry_routes_valid(&world->geometry);
+}
+
+size_t shrink_event_count(const ShrinkWorld *world)
+{
+    return world == NULL ? 0U : world->event_count;
+}
+
+int shrink_event_snapshot(const ShrinkWorld *world, size_t index, ShrinkEvent *out_event)
+{
+    if (world == NULL || out_event == NULL || index >= world->event_count) return 0;
+    *out_event = world->events[(world->event_head + index) % MAX_EVENTS];
+    return 1;
+}
+
+void shrink_events_clear(ShrinkWorld *world)
+{
+    if (world != NULL) { world->event_head = 0U; world->event_count = 0U; }
 }

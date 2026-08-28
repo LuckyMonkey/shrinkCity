@@ -82,6 +82,16 @@ Acceptance: every security control changes measurable simulation outcomes, and e
 
 Acceptance: the player can build and visually inspect a non-rectangular store, understand walls/doors/FOV/grid, and rearrange fixtures without losing simulation consistency.
 
+## Priority 6 — authored incidents and store designer
+
+- [ ] Add bounded C-authored scenario incident tracks for fire, car impact, outage, robbery, delivery accident, flood, and system failure.
+- [ ] Add compact authoritative hazard/temporary-obstruction cells with snapshot support and pathfinding integration.
+- [ ] Add deterministic scripted consequences: damage states, closures, evacuation, repair costs, and scenario objectives.
+- [ ] Define versioned JSON level files for user-authored geometry, floor surfaces, rooms, fixtures, staff, inventory, cash, and goals.
+- [ ] Add C validation for loaded levels and a separate Godot store-designer mode; user levels remain free of arbitrary scripts initially.
+- [ ] Add authoritative floor-surface types and isometric surface rendering.
+- [ ] Improve canonical isometric object assets, storefront windows, damage states, and environmental props while preserving exact C footprints.
+
 ## Testing and tooling
 
 - [ ] Add C unit tests for wall/door connectivity and no-trap invariants.

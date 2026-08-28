@@ -51,6 +51,52 @@ static void test_customer_uses_authoritative_target(void)
     shrink_destroy(world);
 }
 
+static void test_authoritative_events(void)
+{
+    ShrinkWorld *a = shrink_create(12345U);
+    ShrinkWorld *b = shrink_create(12345U);
+    assert(a != NULL && b != NULL);
+    shrink_tick(a, 1.0);
+    shrink_tick(b, 1.0);
+    assert(shrink_event_count(a) >= 2U);
+    assert(shrink_event_count(a) == shrink_event_count(b));
+    ShrinkEvent first, same;
+    assert(shrink_event_snapshot(a, 0U, &first) == 1);
+    assert(first.type == SHRINK_EVENT_CUSTOMER_ENTERED);
+    assert(first.entity_id == 1U && first.tick == 1U);
+    assert(shrink_event_snapshot(a, 1U, &first) == 1);
+    assert(first.type == SHRINK_EVENT_ITEM_SELECTED);
+    for (size_t i = 0U; i < shrink_event_count(a); ++i) {
+        assert(shrink_event_snapshot(a, i, &first) == 1);
+        assert(shrink_event_snapshot(b, i, &same) == 1);
+        assert(first.type == same.type && first.entity_id == same.entity_id);
+        assert(first.fixture_id == same.fixture_id && first.product_id == same.product_id);
+        assert(first.tick == same.tick && first.value == same.value);
+    }
+    shrink_events_clear(a);
+    assert(shrink_event_count(a) == 0U);
+
+    unsigned attempted = 0U;
+    for (unsigned tick = 0U; tick < 600U; ++tick) {
+        shrink_tick(a, 1.0);
+        for (size_t i = 0U; i < shrink_event_count(a); ++i) {
+            ShrinkEvent event;
+            assert(shrink_event_snapshot(a, i, &event) == 1);
+            if (event.type == SHRINK_EVENT_THEFT_ATTEMPTED) ++attempted;
+        }
+        assert(shrink_event_count(a) <= 256U);
+        shrink_events_clear(a);
+    }
+    ShrinkMetrics metrics;
+    shrink_metrics(a, &metrics);
+    assert(attempted > 0U);
+    assert(metrics.theft_attempts >= metrics.thefts);
+    assert(metrics.thefts_detected <= metrics.theft_attempts);
+    assert(metrics.thefts_recovered <= metrics.thefts_detected);
+    shrink_destroy(a);
+    shrink_destroy(b);
+}
+
 static void assert_same(ShrinkMetrics a, ShrinkMetrics b)
 {
     assert(a.customers_entered == b.customers_entered);
@@ -60,6 +106,9 @@ static void assert_same(ShrinkMetrics a, ShrinkMetrics b)
     assert(a.revenue == b.revenue);
     assert(a.stolen_value == b.stolen_value);
     assert(a.labor_cost == b.labor_cost);
+    assert(a.theft_attempts == b.theft_attempts);
+    assert(a.thefts_detected == b.thefts_detected);
+    assert(a.thefts_recovered == b.thefts_recovered);
 }
 
 int main(void)
@@ -76,6 +125,7 @@ int main(void)
     assert(path_x == 4 && path_y == 4);
 
     test_customer_uses_authoritative_target();
+    test_authoritative_events();
 
     ShrinkWorld *geometry_world = shrink_create(77U);
     assert(geometry_world != NULL);

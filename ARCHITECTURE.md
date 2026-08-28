@@ -28,3 +28,14 @@ Product destination coordinates are not stored in customer logic. Initial conten
 The C geometry initializer selects one of eight curated store shells from the requested layout ID/seed. Each uses the same bounded cell grid and required-route validation, but differs in footprint: convenience, strip-mall, L-shaped, bump-out, T-shaped, corner, warehouse, and two-wing sites. The Godot renderer adds inexpensive surrounding site presentation and clamps camera movement around the authoritative site.
 
 `shrink-balance` is a headless CSV runner. It creates fresh authoritative worlds for a seed range and reports revenue, cost of goods, shrink, labor, security, profit, satisfaction, and wait, making tuning comparisons reproducible without Godot.
+
+
+## Authoritative event ring
+
+The simulation owns a bounded 256-entry event ring alongside snapshots. Events are immutable facts with tick, type, entity/fixture context, product, position, and value. The CLI drains and serializes this ring as `EVENT` records; Godot consumes those same records for its incident feed. The ring drops the oldest record deterministically on overflow rather than allocating in a tick. Current events include entry, item selection, purchase completion, theft attempt, detection, security response/intervention, and theft exit.
+
+Theft is deliberately staged: merchandise is decremented when acquired, an attempted theft emits immediately, camera observation may mark it detected, and shrink is only finalized when the customer reaches the exit. A nearby guard can recover a detected attempt. This keeps attempted, detected, recovered, and completed loss distinct without creating a special criminal entity type.
+
+## Official scripts and user-authored levels
+
+Curated scenarios are the intended home for future deterministic scripted incident tracks (fire, impact, outage, robbery, delivery accident, and similar hazards). These will be bounded C records with authoritative consequences; Godot will only present them. User-created store levels will initially author geometry, fixtures, inventory, staff, cash, and goals, but will not supply arbitrary gameplay scripts. A versioned JSON level format and authoritative floor-surface metadata are planned before exposing the designer as a saveable tool.

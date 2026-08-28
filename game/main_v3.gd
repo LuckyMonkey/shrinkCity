@@ -68,6 +68,12 @@ func _consume_line(line: String) -> void:
 func _event_message(kind: String, subject_id: int, amount: int) -> String:
     match kind:
         "CUSTOMER_ENTERED": return "Shopper #%d entered" % subject_id
+        "PURCHASE_COMPLETED": return "Shopper #%d completed a purchase" % subject_id
+        "THEFT_ATTEMPTED": return "Shoplifting attempt near fixture #%d" % amount
+        "THEFT_DETECTED": return "Camera detected shopper #%d" % subject_id
+        "SECURITY_RESPONDING": return "Security responding to shopper #%d" % subject_id
+        "SECURITY_INTERVENTION": return "Security intervention at shopper #%d" % subject_id
+        "THEFT_EXITED": return "LOSS PREVENTION: theft exited the store"
         "PURCHASE": return "%d purchase%s completed" % [amount, "" if amount == 1 else "s"]
         "THEFT_RECORDED": return "LOSS PREVENTION: %d theft%s recorded" % [amount, "" if amount == 1 else "s"]
         "CUSTOMER_ABANDONED": return "%d shopper%s abandoned the trip" % [amount, "" if amount == 1 else "s"]

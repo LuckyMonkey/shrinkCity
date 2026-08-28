@@ -121,12 +121,38 @@ typedef struct ShrinkEntitySnapshot {
     double theft_tendency;
 } ShrinkEntitySnapshot;
 
+typedef enum ShrinkEventType {
+    SHRINK_EVENT_CUSTOMER_ENTERED = 1,
+    SHRINK_EVENT_ITEM_SELECTED,
+    SHRINK_EVENT_PURCHASE_COMPLETED,
+    SHRINK_EVENT_THEFT_ATTEMPTED,
+    SHRINK_EVENT_THEFT_DETECTED,
+    SHRINK_EVENT_SECURITY_RESPONDING,
+    SHRINK_EVENT_SECURITY_INTERVENTION,
+    SHRINK_EVENT_THEFT_EXITED,
+    SHRINK_EVENT_CHECKOUT_ABANDONED,
+    SHRINK_EVENT_STOCKOUT
+} ShrinkEventType;
+
+typedef struct ShrinkEvent {
+    uint64_t tick;
+    ShrinkEventType type;
+    uint64_t entity_id;
+    uint64_t fixture_id;
+    int product_id;
+    int x, y;
+    double value;
+} ShrinkEvent;
+
 typedef struct ShrinkMetrics {
     uint64_t customers_entered;
     uint64_t customers_served;
     uint64_t purchases;
     uint64_t abandoned;
     uint64_t thefts;
+    uint64_t theft_attempts;
+    uint64_t thefts_detected;
+    uint64_t thefts_recovered;
     double stolen_value;
     double revenue;
     double labor_cost;
@@ -146,6 +172,9 @@ void shrink_metrics(const ShrinkWorld *world, ShrinkMetrics *out_metrics);
 size_t shrink_entity_count(const ShrinkWorld *world);
 int shrink_entity_snapshot(const ShrinkWorld *world, size_t index,
                            ShrinkEntitySnapshot *out_snapshot);
+size_t shrink_event_count(const ShrinkWorld *world);
+int shrink_event_snapshot(const ShrinkWorld *world, size_t index, ShrinkEvent *out_event);
+void shrink_events_clear(ShrinkWorld *world);
 size_t shrink_employee_count(const ShrinkWorld *world);
 int shrink_employee_snapshot(const ShrinkWorld *world, size_t index, ShrinkEmployeeSnapshot *out_snapshot);
 ShrinkStaffResult shrink_hire_employee(ShrinkWorld *world, ShrinkEmployeeRole role, double wage, uint64_t *out_id);

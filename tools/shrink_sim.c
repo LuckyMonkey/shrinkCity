@@ -10,15 +10,6 @@
 #include <time.h>
 #include <unistd.h>
 
-#define STREAM_ENTITY_HISTORY 128U
-
-typedef struct StreamHistory {
-    ShrinkMetrics metrics;
-    uint64_t entity_ids[STREAM_ENTITY_HISTORY];
-    size_t entity_count;
-    int initialized;
-} StreamHistory;
-
 static void usage(const char *name)
 {
     fprintf(stderr,
@@ -119,41 +110,33 @@ static void stream_geometry(const ShrinkWorld *world)
     }
 }
 
-static int history_contains(const StreamHistory *history, uint64_t id)
+static const char *event_name(ShrinkEventType type)
 {
-    for (size_t i = 0U; i < history->entity_count; ++i)
-        if (history->entity_ids[i] == id) return 1;
-    return 0;
+    switch (type) {
+        case SHRINK_EVENT_CUSTOMER_ENTERED: return "CUSTOMER_ENTERED";
+        case SHRINK_EVENT_ITEM_SELECTED: return "ITEM_SELECTED";
+        case SHRINK_EVENT_PURCHASE_COMPLETED: return "PURCHASE_COMPLETED";
+        case SHRINK_EVENT_THEFT_ATTEMPTED: return "THEFT_ATTEMPTED";
+        case SHRINK_EVENT_THEFT_DETECTED: return "THEFT_DETECTED";
+        case SHRINK_EVENT_SECURITY_RESPONDING: return "SECURITY_RESPONDING";
+        case SHRINK_EVENT_SECURITY_INTERVENTION: return "SECURITY_INTERVENTION";
+        case SHRINK_EVENT_THEFT_EXITED: return "THEFT_EXITED";
+        case SHRINK_EVENT_CHECKOUT_ABANDONED: return "CHECKOUT_ABANDONED";
+        case SHRINK_EVENT_STOCKOUT: return "STOCKOUT";
+        default: return "UNKNOWN";
+    }
 }
 
-static void stream_events(const ShrinkWorld *world, StreamHistory *history)
+static void stream_events(ShrinkWorld *world)
 {
-    ShrinkMetrics current;
-    shrink_metrics(world, &current);
-
-    uint64_t current_ids[STREAM_ENTITY_HISTORY];
-    size_t current_count = 0U;
-    for (size_t i = 0U; i < shrink_entity_count(world) && current_count < STREAM_ENTITY_HISTORY; ++i) {
-        ShrinkEntitySnapshot entity;
-        if (!shrink_entity_snapshot(world, i, &entity)) continue;
-        current_ids[current_count++] = entity.id;
-        if (!history_contains(history, entity.id))
-            printf("EVENT CUSTOMER_ENTERED %" PRIu64 " 1\n", entity.id);
+    ShrinkEvent event;
+    for (size_t i = 0U; i < shrink_event_count(world); ++i) {
+        if (!shrink_event_snapshot(world, i, &event)) continue;
+        printf("EVENT %s %" PRIu64 " %" PRIu64 " %d %d %d %d %.2f\n",
+               event_name(event.type), event.entity_id, event.fixture_id,
+               event.product_id, event.x, event.y, (int)event.tick, event.value);
     }
-
-    if (history->initialized) {
-        if (current.purchases > history->metrics.purchases)
-            printf("EVENT PURCHASE 0 %" PRIu64 "\n", current.purchases - history->metrics.purchases);
-        if (current.thefts > history->metrics.thefts)
-            printf("EVENT THEFT_RECORDED 0 %" PRIu64 "\n", current.thefts - history->metrics.thefts);
-        if (current.abandoned > history->metrics.abandoned)
-            printf("EVENT CUSTOMER_ABANDONED 0 %" PRIu64 "\n", current.abandoned - history->metrics.abandoned);
-    }
-
-    history->metrics = current;
-    history->entity_count = current_count;
-    memcpy(history->entity_ids, current_ids, current_count * sizeof(current_ids[0]));
-    history->initialized = 1;
+    shrink_events_clear(world);
 }
 
 static void stream_frame(const ShrinkWorld *world)
@@ -232,14 +215,12 @@ int main(int argc, char **argv)
     }
 
     if (stream) {
-        StreamHistory history;
-        memset(&history, 0, sizeof(history));
         if (scenario != NULL)
             printf("SCENARIO %u %s %u %d %.2f\n", scenario->id, scenario->slug, scenario->difficulty, (int)scenario->goal_type, scenario->goal_value);
         for (unsigned tick = 0; tick < stream_ticks; ++tick) {
             process_commands(world);
             shrink_tick(world, 1.0);
-            stream_events(world, &history);
+            stream_events(world);
             stream_frame(world);
             if (realtime) {
                 const struct timespec delay = {0, 50000000L};
@@ -257,7 +238,7 @@ int main(int argc, char **argv)
     shrink_metrics(world, &m);
     if (scenario != NULL) printf("Scenario: %s\n", scenario->title);
     printf("Shrink City simulation\nSeed: %" PRIu64 "\nTicks: %" PRIu64 "\n\n", seed, shrink_tick_count(world));
-    printf("Customers entered: %" PRIu64 "\nPurchases: %" PRIu64 "\nAbandoned: %" PRIu64 "\nThefts: %" PRIu64 "\n\n", m.customers_entered, m.purchases, m.abandoned, m.thefts);
+    printf("Customers entered: %" PRIu64 "\nPurchases: %" PRIu64 "\nAbandoned: %" PRIu64 "\nTheft attempts: %" PRIu64 "\nDetected: %" PRIu64 "\nRecovered: %" PRIu64 "\nThefts: %" PRIu64 "\n\n", m.customers_entered, m.purchases, m.abandoned, m.theft_attempts, m.thefts_detected, m.thefts_recovered, m.thefts);
     printf("Revenue: $%.2f\nCOGS: $%.2f\nShrink: $%.2f\nLabor: $%.2f\nSecurity: $%.2f\nProfit: $%.2f\n\n", m.revenue, m.cost_of_goods, m.stolen_value, m.labor_cost, m.security_cost, m.profit);
     printf("Average checkout wait: %.1f sec\nAverage satisfaction: %.1f%%\n", m.average_checkout_wait, m.average_satisfaction);
     shrink_destroy(world);
