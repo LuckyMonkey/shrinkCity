@@ -43,6 +43,7 @@ typedef enum ShrinkRoomType {
     SHRINK_ROOM_SECURITY,
     SHRINK_ROOM_VESTIBULE
 } ShrinkRoomType;
+
 typedef struct ShrinkGeometryInfo {
     int width;
     int height;
@@ -51,6 +52,7 @@ typedef struct ShrinkGeometryInfo {
     size_t room_count;
     unsigned layout_id;
 } ShrinkGeometryInfo;
+
 typedef struct ShrinkRoomSnapshot {
     uint64_t id;
     ShrinkRoomType type;
@@ -58,6 +60,7 @@ typedef struct ShrinkRoomSnapshot {
     int customer_accessible;
     int staff_accessible;
 } ShrinkRoomSnapshot;
+
 typedef struct ShrinkWallSnapshot { uint64_t id; int ax, ay, bx, by; } ShrinkWallSnapshot;
 typedef struct ShrinkFixtureSnapshot { uint64_t id; ShrinkFixtureType type; int x, y; unsigned rotation; unsigned width, height; unsigned access_mask; int product_id; } ShrinkFixtureSnapshot;
 
@@ -75,12 +78,21 @@ typedef enum ShrinkCustomerArchetype {
     SHRINK_CUSTOMER_BROWSER,
     SHRINK_CUSTOMER_OPPORTUNISTIC
 } ShrinkCustomerArchetype;
+
 typedef enum ShrinkEmployeeRole {
     SHRINK_EMPLOYEE_CASHIER = 1,
     SHRINK_EMPLOYEE_ASSOCIATE,
     SHRINK_EMPLOYEE_STOCKER,
     SHRINK_EMPLOYEE_SECURITY
 } ShrinkEmployeeRole;
+
+typedef enum ShrinkStaffResult {
+    SHRINK_STAFF_OK = 0,
+    SHRINK_STAFF_FULL,
+    SHRINK_STAFF_INVALID_ROLE,
+    SHRINK_STAFF_NOT_FOUND
+} ShrinkStaffResult;
+
 typedef struct ShrinkEmployeeSnapshot {
     uint64_t id;
     ShrinkEmployeeRole role;
@@ -89,7 +101,10 @@ typedef struct ShrinkEmployeeSnapshot {
     double fatigue;
     double morale;
     int x, y;
+    uint64_t target_fixture_id;
+    int target_x, target_y;
 } ShrinkEmployeeSnapshot;
+
 typedef struct ShrinkEntitySnapshot {
     uint64_t id;
     double x;
@@ -133,6 +148,8 @@ int shrink_entity_snapshot(const ShrinkWorld *world, size_t index,
                            ShrinkEntitySnapshot *out_snapshot);
 size_t shrink_employee_count(const ShrinkWorld *world);
 int shrink_employee_snapshot(const ShrinkWorld *world, size_t index, ShrinkEmployeeSnapshot *out_snapshot);
+ShrinkStaffResult shrink_hire_employee(ShrinkWorld *world, ShrinkEmployeeRole role, double wage, uint64_t *out_id);
+ShrinkStaffResult shrink_fire_employee(ShrinkWorld *world, uint64_t id);
 void shrink_geometry_info(const ShrinkWorld *world, ShrinkGeometryInfo *out_info);
 int shrink_room_snapshot(const ShrinkWorld *world, size_t index, ShrinkRoomSnapshot *out_snapshot);
 uint32_t shrink_floor_row(const ShrinkWorld *world, int y);
