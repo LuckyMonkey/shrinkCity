@@ -28,11 +28,13 @@ static unsigned count_role(const ShrinkWorld *world, ShrinkEmployeeRole role)
 
 int main(void)
 {
-    assert(shrink_scenario_count() >= 4U);
+    assert(shrink_scenario_count() >= 6U);
     assert(shrink_scenario_find("corner-market") != NULL);
     assert(shrink_scenario_find("electronics") != NULL);
     assert(shrink_scenario_find("big-box") != NULL);
     assert(shrink_scenario_find("pharmacy") != NULL);
+    assert(shrink_scenario_find("grocery-fresh") != NULL);
+    assert(shrink_scenario_find("troubled-store") != NULL);
     assert(shrink_scenario_find("not-a-store") == NULL);
 
     for (size_t i = 0U; i < shrink_scenario_count(); ++i) {
@@ -62,15 +64,23 @@ int main(void)
     ShrinkWorld *corner = shrink_scenario_create(shrink_scenario_find("corner-market"), 0U);
     ShrinkWorld *electronics = shrink_scenario_create(shrink_scenario_find("electronics"), 0U);
     ShrinkWorld *big_box = shrink_scenario_create(shrink_scenario_find("big-box"), 0U);
-    assert(corner != NULL && electronics != NULL && big_box != NULL);
+    ShrinkWorld *grocery = shrink_scenario_create(shrink_scenario_find("grocery-fresh"), 0U);
+    ShrinkWorld *troubled = shrink_scenario_create(shrink_scenario_find("troubled-store"), 0U);
+    assert(corner != NULL && electronics != NULL && big_box != NULL && grocery != NULL && troubled != NULL);
     assert(count_role(corner, SHRINK_EMPLOYEE_CASHIER) == 1U);
     assert(count_role(electronics, SHRINK_EMPLOYEE_SECURITY) >= 2U);
     assert(count_type(electronics, SHRINK_FIXTURE_CAMERA) > count_type(corner, SHRINK_FIXTURE_CAMERA));
     assert(shrink_employee_count(big_box) > shrink_employee_count(corner));
+    assert(count_role(grocery, SHRINK_EMPLOYEE_STOCKER) >= 1U);
+    assert(shrink_employee_count(grocery) > shrink_employee_count(troubled));
+    assert(count_type(troubled, SHRINK_FIXTURE_CAMERA) < count_type(electronics, SHRINK_FIXTURE_CAMERA));
+    assert(count_role(troubled, SHRINK_EMPLOYEE_SECURITY) == 0U);
 
     shrink_destroy(corner);
     shrink_destroy(electronics);
     shrink_destroy(big_box);
+    shrink_destroy(grocery);
+    shrink_destroy(troubled);
     puts("scenario registry and deterministic presets: ok");
     return 0;
 }
