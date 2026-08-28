@@ -1,6 +1,6 @@
 [application]
 config/name="Shrink City Prototype"
-run/main_scene="res://main.tscn"
+run/main_scene="res://launcher.tscn"
 
 [display]
 window/size/viewport_width=1280
