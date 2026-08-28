@@ -4,7 +4,9 @@ const SCENARIOS := [
     {"slug":"corner-market", "title":"CORNER MARKET", "subtitle":"First Shift", "blurb":"Compact grocery. Tight margins, opportunistic theft, and a lean crew.", "goal":"Goal: build profit without choking the front end.", "difficulty":"★☆☆"},
     {"slug":"electronics", "title":"ELECTRONICS", "subtitle":"High Value", "blurb":"Portable expensive goods, locked cases, cameras, and costly LP coverage.", "goal":"Goal: hold shrink down without driving shoppers away.", "difficulty":"★★★"},
     {"slug":"big-box", "title":"BIG BOX", "subtitle":"Saturday Rush", "blurb":"Heavy traffic, self-checkout pressure, staffing tradeoffs, and more moving parts.", "goal":"Goal: serve the rush without losing the store to queues or shrink.", "difficulty":"★★★"},
-    {"slug":"pharmacy", "title":"PHARMACY", "subtitle":"Small Items, Big Risk", "blurb":"Small concealable goods and security choices where friction matters.", "goal":"Goal: protect high-risk categories while preserving satisfaction.", "difficulty":"★★☆"}
+    {"slug":"pharmacy", "title":"PHARMACY", "subtitle":"Small Items, Big Risk", "blurb":"Small concealable goods and security choices where friction matters.", "goal":"Goal: protect high-risk categories while preserving satisfaction.", "difficulty":"★★☆"},
+    {"slug":"grocery-fresh", "title":"FRESH MARKET", "subtitle":"Delivery Day", "blurb":"A fuller grocery operation with long shopping trips, replenishment pressure, and more staff on the floor.", "goal":"Goal: keep a busy grocery profitable while protecting a larger sales floor.", "difficulty":"★★☆"},
+    {"slug":"troubled-store", "title":"TROUBLED STORE", "subtitle":"Turnaround", "blurb":"An inherited discount store with weak coverage, thin staffing, and an awkward operating baseline.", "goal":"Goal: stabilize shrink and operations before the store bleeds out.", "difficulty":"★★★"}
 ]
 
 var selected_index := 0
@@ -36,8 +38,8 @@ func _build_ui() -> void:
     add_child(shade)
 
     var panel := PanelContainer.new()
-    panel.position = Vector2(34, 82)
-    panel.size = Vector2(410, 548)
+    panel.position = Vector2(34, 72)
+    panel.size = Vector2(420, 570)
     add_child(panel)
 
     var margin := MarginContainer.new()
@@ -48,7 +50,7 @@ func _build_ui() -> void:
     panel.add_child(margin)
 
     var column := VBoxContainer.new()
-    column.add_theme_constant_override("separation", 12)
+    column.add_theme_constant_override("separation", 10)
     margin.add_child(column)
 
     var brand := Label.new()
@@ -64,12 +66,12 @@ func _build_ui() -> void:
     column.add_child(HSeparator.new())
 
     var buttons := HBoxContainer.new()
-    buttons.add_theme_constant_override("separation", 6)
+    buttons.add_theme_constant_override("separation", 5)
     column.add_child(buttons)
     for i in range(SCENARIOS.size()):
         var button := Button.new()
         button.text = str(i + 1)
-        button.custom_minimum_size = Vector2(62, 44)
+        button.custom_minimum_size = Vector2(52, 42)
         button.tooltip_text = SCENARIOS[i]["title"]
         button.pressed.connect(_select_scenario.bind(i, true))
         buttons.add_child(button)
@@ -106,7 +108,7 @@ func _build_ui() -> void:
     column.add_child(hint)
 
     var spacer := Control.new()
-    spacer.custom_minimum_size = Vector2(1, 16)
+    spacer.custom_minimum_size = Vector2(1, 10)
     column.add_child(spacer)
 
     var play := Button.new()
@@ -122,7 +124,7 @@ func _build_ui() -> void:
     column.add_child(demo)
 
     var footer := Label.new()
-    footer.text = "Esc: scenario menu  •  1-4: switch demo storefront"
+    footer.text = "Esc: scenario menu  •  1-6: switch demo storefront"
     footer.modulate = Color("#748489")
     column.add_child(footer)
 
@@ -174,6 +176,6 @@ func _unhandled_input(event: InputEvent) -> void:
         return
     if visible and event is InputEventKey and event.pressed and not event.echo:
         var key := event as InputEventKey
-        if key.keycode >= KEY_1 and key.keycode <= KEY_4:
+        if key.keycode >= KEY_1 and key.keycode <= KEY_6:
             _select_scenario(int(key.keycode - KEY_1), true)
             get_viewport().set_input_as_handled()
