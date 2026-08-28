@@ -1,113 +1,160 @@
-# Shrink City implementation backlog
+# Shrink City implementation checklist
 
-This file is the continuation plan for GPT/agents working on the project. The C simulation remains authoritative; Godot owns presentation, input, construction UI, and platform integration. Do not silently replace the C core with Godot-only gameplay.
+This is the continuing project checklist for GPT/Codex passes. Items are checked only when the behavior is implemented in the authoritative C simulation or verified in Godot. C11 owns gameplay state; Godot owns presentation, input, camera, construction UI, and platform integration. Do not introduce an ECS or move gameplay authority into GDScript.
 
-## Current status
+## Current verified baseline
 
-Implemented and verified:
+- [x] Deterministic seeded C11 simulation with bounded contiguous customer/employee storage.
+- [x] Opaque public C API, fixed-step ticks, headless CLI, repeatable metrics, and CTest.
+- [x] Authoritative irregular geometry: 8 layouts, floor cells, walls, fixtures, rooms, doors, stable IDs, footprints, rotations, access cells, and route validation.
+- [x] Construction commands: place, move, rotate, remove fixtures; add/remove walls; collision, bounds, access, and required-route validation.
+- [x] Customers route to product fixtures and reachable interaction cells; targets revalidate after construction changes.
+- [x] Customer archetypes/traits: speed, patience, budget, theft tendency, and deterministic product choice.
+- [x] Employee records, hiring/firing API, roles, wages, skill, fatigue, morale, positions, and spatial guard patrol.
+- [x] Product prices/costs/theft risk, checkout queues, staffed versus self-checkout timing, revenue, COGS, labor, security cost, shrink, and profit.
+- [x] Spatial camera/guard deterrence, camera maintenance, authoritative staged incident events, and event-driven Godot incident feed.
+- [x] Theft lifecycle: attempt, detection, security response, intervention/recovery, or completed loss at exit.
+- [x] Four C-authored scenario presets: corner-market, electronics, big-box, and pharmacy.
+- [x] Scenario CLI, scenario metadata, attract-mode launcher, live simulation behind the menu, scenario reset, and event stream.
+- [x] Godot V2/V3 isometric presentation: panning, zoom, selection, tooltips, construction feedback, rooms, site context, and full fixture footprints.
+- [x] Linux CI with normal and sanitizer builds, CTest, stream checks, balance strategy checks, scenario checks, and Godot headless validation.
 
-- deterministic seeded C11 headless simulation
-- contiguous customer storage and opaque C API
-- inventory, purchase, theft, checkout queues, metrics, BFS movement
-- CLI day simulation and snapshot stream
-- CTest invariants, determinism, pathfinding, and stream protocol checks
-- Godot 4 process bridge to the C simulation
-- isometric store view, panning, zoom, selection, tooltips, fixture placement
-- irregular rooms, floor grid, walls, departments, shelf product markers
-- generated full-color shopper/product/security raster assets
+## Milestone A — authoritative incidents and operations
 
-Prototype-only and not yet authoritative:
+### Event and incident foundation
 
-- departments, entrances, addons, guard patrol, FOV, and inspector properties are still prototype/data work; fixture and wall construction authority is in C
-- customers are still one simple product trip; staff/security are mostly visual
-- Godot process bridge must eventually become a GDExtension or equivalent native FFI
+- [x] Replace CLI/Godot metric-delta event inference with a bounded C event ring.
+- [x] Expose deterministic event records with tick, type, entity ID, fixture ID, product, position, and value.
+- [x] Distinguish theft attempt, detection, response, intervention/recovery, and completed exit loss.
+- [ ] Add event queue overflow diagnostics and a documented consumer/acknowledgement contract.
+- [ ] Add authoritative event replay tests covering complete event sequences, not only aggregate metrics.
 
-## Priority 1 — authoritative world/construction model
+### Security and loss prevention
 
-- [x] Add C world dimensions, walkable-cell map, wall segments, fixtures, entrances, exits, and registers/checklanes (rooms/departments remain Godot/data work).
-- [x] Add C commands/API for place, move, rotate, remove, and add/remove wall segments.
-- [x] Validate construction commands before applying them: bounds, collisions, required entrance, required exit, and connected checkout/exit route.
-- [ ] Support multiple entrances and exits with per-door properties: capacity, direction, open/closed state, detector upgrades, and customer flow.
-- [ ] Add store expansion purchases: adjacent parcels/portions, cost, construction time, new walls, parking, loading dock, and unlockable departments.
-- [x] Add a read-only world snapshot containing dimensions, walls, fixtures, doors, customers, and stable IDs for Godot.
-- [ ] Replace the temporary Godot process bridge with a native GDExtension/FFI adapter using the same C API.
+- [ ] Separate camera deterrence, observation, detection confidence, and intervention confidence in tunable C configuration.
+- [ ] Add directional/cone camera coverage and expose coverage cells/FOV in snapshots.
+- [ ] Add roaming guard incident assignment: patrol → investigate/respond → intercept → return to patrol.
+- [ ] Add guard response distance/time and deterministic success/failure outcomes.
+- [ ] Make locked cases reduce theft while creating assistance requests, labor load, wait, and lost conversion.
+- [ ] Implement self-checkout missed-scan/under-scan events separately from aisle concealment.
+- [ ] Make RFID/EAS tags and exit gates detect unpaid tagged merchandise with false negatives.
+- [ ] Add optional receipt-check station with labor, friction, throughput, and detection tradeoffs.
+- [ ] Add global and per-guard/door/department security policy toggles.
+- [ ] Add security metrics: prevented loss, recovered value, false positives, friction loss, and intervention count.
 
-Acceptance: a headless command sequence can build an irregular store, move every fixture, add/remove doors safely, and serialize/replay the same result from the same seed.
+### Inventory, deliveries, and employee tasks
 
-## Priority 2 — people and heuristics
+- [ ] Split inventory into sales-floor quantity, backroom quantity, fixture capacity, and product totals.
+- [ ] Add stockout events, lost-sale value, shelf availability, and alternate-product/abandon behavior.
+- [ ] Add deterministic deliveries, receiving inventory, delivery backlog, and delivery events.
+- [ ] Add bounded employee tasks: cashier, locked-case associate, stocker, security response, and current target/task snapshots.
+- [ ] Add stocker restocking from backroom to fixtures and `RESTOCK_STARTED`/`RESTOCKED` events.
+- [ ] Add employee availability effects, fatigue/workload, and assistance abandonment.
+- [ ] Add product departments and 8–16 useful scenario-specific products.
+- [ ] Load validated `data/products.json`, `fixtures.json`, `security.json`, and `scenarios.json` into internal C structs.
+- [ ] Add product shelf capacity, facings, replenishment thresholds, and employee inventory checks.
+- [ ] Add item/department/random RFID tagging workflows and tagging costs.
 
-- [x] Add a bounded employee roster with id, role, wage, skill, fatigue, morale, assignment position, and snapshot data.
-- [ ] Add hiring, firing, wages, schedules, training/upgrades, employee statistics, and selectable employee inspector data.
-- [ ] Add roaming security guards with grid pathfinding, patrol routes, detection skill, deterrence, response time, fatigue, and coverage.
-- [ ] Add security policy toggles globally and per guard: patrol intensity, receipt checks, intervention threshold, camera monitoring, and customer-friction settings.
-- [x] Add deterministic customer archetypes and starter traits: shopping speed, budget, patience, theft tendency, and product choice.
-- [ ] Add behavior heuristics: browse, compare, seek assistance, abandon, purchase, steal, conceal, react to congestion, and react to security friction.
-- [ ] Make all simulated people move along valid authoritative grid paths and expose their current path/intent in snapshots. (Customer product target fixture/access-cell intent is implemented; full paths remain.)
+### Customers and sales
 
-Acceptance: two identical seeds produce identical people, assignments, routes, decisions, thefts, waits, and metrics; different seeds produce varied but reproducible populations.
+- [ ] Add bounded multi-item baskets by archetype and route customers between several fixtures.
+- [ ] Add browse/compare/assistance/impulse/congestion/security-friction heuristics.
+- [ ] Add impulse sales near endcaps, promotions, and checkout with archetype/budget effects.
+- [ ] Add returns/refunds and `RETURN_STARTED`/`RETURN_COMPLETED` events.
+- [ ] Add customer security sensitivity and basket-size tendency to snapshots.
+- [ ] Add customer-level satisfaction/friction accounting for assistance, receipt checks, locked cases, alarms, and delays.
 
-## Priority 3 — inventory, departments, and merchandise
+## Milestone B — real scenarios and progression
 
-- [ ] Load validated `products.json`, `fixtures.json`, `security.json`, and `scenarios.json` into internal structs.
-- [x] Add starter product costs, prices, demand, theft risk, and cost-of-goods accounting.
-- [x] Route customers to product fixtures and deterministic reachable interaction cells; revalidate targets after construction changes.
-- [ ] Add shelf variants: gondola, short shelf, bin, locked shelf, clear case, clearance rack, sale display, endcap, cooler, and high-value case.
-- [ ] Add shelf capacity, facing count, item placement, stock levels, restock thresholds, and employee restocking tasks.
-- [ ] Render product sprites/icons on shelves and expose item/departments/value/stock as tooltip properties.
-- [ ] Add RFID workflows: tag individual items, tag departments, tagging stations, tag cost, random sampling, full tagging, tag coverage, and tag removal/maintenance.
-- [ ] Add inventory checks by employees and discrepancies from miscounts, damage, and shrink.
+### Scenario authority
 
-Acceptance: moving a shelf or department changes pathing, display capacity, demand access, inventory, labor, and theft outcomes in headless runs.
+- [ ] Add scenario objective progress, target/current values, completion, failure, and end-of-day report in C.
+- [ ] Add scenario-specific catalog, traffic, staffing, security, inventory, starting cash, and goals.
+- [ ] Add `grocery-fresh` only after delivery/restocking meaningfully differ from the existing scenarios.
+- [ ] Add `troubled-store` only after capital, morale, staffing, and layout penalties are real.
+- [ ] Add Holiday Electronics and Downtown Express only when scenario differences are mechanical, not label-only.
+- [ ] Make launcher metadata load from `shrink-sim --list-scenarios` or another authoritative source instead of duplicated IDs/text.
 
-## Priority 4 — security and ordinances
+### Scripted official incidents
 
-- [ ] Add camera fixtures with ceiling-layer rendering, configurable range/cone, occlusion/coverage, monitoring assignment, detection chance, and maintenance cost.
-- [ ] Add guard/camera FOV snapshots for Godot visualization and selection overlays.
-- [ ] Add entrance/exit detector types: EAS, metal detector, receipt gate, RFID gate, and configurable false-positive/friction rates.
-- [ ] Add ordinances/policies: receipt checks, bag checks, locked cases, camera retention, guard ratios, accessibility rules, and customer-rights/friction modifiers.
-- [ ] Support global policy toggles and overrides for individual guards, doors, departments, and checklanes.
-- [ ] Test security tradeoffs against shrink, sales, throughput, satisfaction, labor, false positives, and complaints.
+Official scenario scripts are separate from ordinary emergent events and are not exposed to user-created levels initially.
 
-Acceptance: every security control changes measurable simulation outcomes, and excessive security can lower satisfaction/throughput rather than merely increasing numbers.
+- [ ] Add bounded C-authored scripted-event records: trigger tick, type, target room/fixture/region, duration, severity, seed/subseed, and optional condition.
+- [ ] Add deterministic scenario incident tracks for car impact, fire, sprinkler activation, power outage, robbery, delivery accident, burst pipe/flood, alarm malfunction, coordinated theft rush, and severe weather/entrance closure.
+- [ ] Add simple validated conditions such as shrink/traffic/time thresholds; do not create a general scripting language.
+- [ ] Add hazard/temporary-obstruction cells for debris, fire, smoke, water, damaged floor, and closed aisles.
+- [ ] Integrate hazards into authoritative walkability/pathfinding and snapshots.
+- [ ] Implement fire consequences: unsafe cells, evacuation, merchandise damage, sprinklers, blocked operations, repair cost, and resolution.
+- [ ] Implement car-impact consequences: breached storefront, damaged/disabled fixtures, debris, entrance change, evacuation/panic, and repair cost.
+- [ ] Implement robbery consequences without combat: panic, employee task interruption, temporary closure, guard response, and cash/inventory loss.
+- [ ] Add authoritative damage states: normal, damaged, disabled, destroyed for walls, windows, fixtures, and hazards.
+- [ ] Add scripted-event replay/determinism tests and scenario-specific event-order tests.
 
-## Priority 5 — tycoon construction and presentation
+### Capital and balance
 
-- [ ] Replace temporary Godot fixture arrays with C snapshot-backed fixtures.
-- [ ] Implement proper drag placement, rotation, multi-select, copy/paste, delete confirmation, and undo/redo.
-- [ ] Implement wall drawing with segment snapping, doors/gaps, room connectivity preview, and “would trap customers” validation.
-- [ ] Improve isometric camera scale, zoom limits, tile readability, wall height, ceiling toggle, lighting, shadows, and Z-order.
-- [ ] Add parking, road, sidewalks, landscaping, loading dock, delivery vehicles, dumpsters, staff entrance, and neighboring parcels.
-- [ ] Add multiple views: sales floor, stockroom, staff/security, roof/camera coverage, and construction overlay.
-- [ ] Keep full-color generated sprite assets, but add atlas metadata and fallback silhouettes for platforms without the required texture support.
+- [ ] Add authoritative starting cash and capital ledger.
+- [ ] Charge fixture purchase, construction, hiring, security maintenance, repair, tagging, and operating costs.
+- [ ] Reject unaffordable construction/hiring deterministically, with development sandbox/unlimited-money mode if needed.
+- [ ] Track retail shrink, product-cost shrink, recovered merchandise, prevented loss, security spending, lost sales from friction, stockouts, and locked-case abandonment.
+- [ ] Extend `shrink-balance` to compare scenario strategy presets and objective outcomes over many seeds.
+- [ ] Add acceptance comparisons: cameras/guards reduce shrink but cost money; excessive security can reduce profit/satisfaction; too few lanes increase waits; excess capacity costs labor/capital.
 
-Acceptance: the player can build and visually inspect a non-rectangular store, understand walls/doors/FOV/grid, and rearrange fixtures without losing simulation consistency.
+## Milestone C — store/level designer
 
-## Priority 6 — authored incidents and store designer
+### Versioned level format
 
-- [ ] Add bounded C-authored scenario incident tracks for fire, car impact, outage, robbery, delivery accident, flood, and system failure.
-- [ ] Add compact authoritative hazard/temporary-obstruction cells with snapshot support and pathfinding integration.
-- [ ] Add deterministic scripted consequences: damage states, closures, evacuation, repair costs, and scenario objectives.
-- [ ] Define versioned JSON level files for user-authored geometry, floor surfaces, rooms, fixtures, staff, inventory, cash, and goals.
-- [ ] Add C validation for loaded levels and a separate Godot store-designer mode; user levels remain free of arbitrary scripts initially.
-- [ ] Add authoritative floor-surface types and isometric surface rendering.
-- [ ] Improve canonical isometric object assets, storefront windows, damage states, and environmental props while preserving exact C footprints.
+- [ ] Define versioned JSON format with name/type, width/height, floor, floor surfaces, walls, windows, doors, rooms, departments, fixtures, merchandise, staff, inventory, starting cash, and goals.
+- [ ] Validate malformed JSON, unknown types, bad dimensions, duplicate/unsafe IDs, overlaps, invalid doors, unreachable routes, capacity violations, and invalid scenario starts.
+- [ ] Load user levels into C-owned state without trusting arbitrary coordinates or IDs.
+- [ ] Keep official scripted incident tracks unavailable to user-created levels initially.
+- [ ] Add deterministic save/load/replay tests: same level + seed + commands produces identical snapshots, events, and metrics.
 
-## Testing and tooling
+### Editor capabilities
 
-- [ ] Add C unit tests for wall/door connectivity and no-trap invariants.
-- [ ] Add tests for multiple entrances/exits and detector upgrades.
-- [ ] Add tests for employee hiring/firing/wages/assignments.
-- [ ] Add tests for customer archetype repeatability and behavior distributions.
-- [ ] Add tests for RFID per-item/per-department/random tagging costs.
-- [ ] Add property/fuzz tests for arbitrary construction commands and bounded arrays.
-- [x] Add a deterministic headless balance runner with CSV output.
-- [ ] Add Godot smoke tests for snapshot parsing, fixture selection, drag placement, wall drawing, and alternate seeds.
-- [x] Add CI on Linux for normal + sanitizer CTest and Godot headless validation.
+- [ ] Create separate Godot editor mode for paint floor, erase floor, floor surface, wall, door/window, room, department, fixture, merchandise, security, entrances/exits, staff, inventory, cash, and goals.
+- [ ] Send all edits to C validation; Godot must never mutate authoritative arrays first.
+- [ ] Add full footprint/rotation previews, valid/invalid reasons, access/path preview, snapping, multi-select, copy/paste, delete confirmation, and undo/redo.
+- [ ] Add multiple entrances/exits with capacity, direction, open/closed state, detector upgrades, and flow logic.
+- [ ] Add expansion parcels, purchase cost, construction time, new walls, parking, loading dock, and department unlocks.
+- [ ] Add room connectivity preview and staff/customer accessibility validation.
+- [ ] Add authoritative floor-surface types independent from walkability: vinyl light, warm/cool tile, polished concrete, concrete, carpet, entrance mat, stockroom, receiving.
 
-## Suggested next implementation order
+## Milestone D — tycoon presentation and platform
 
-1. Add multi-door properties, expansion parcels, and construction-time topology previews.
-2. Add employee hiring/firing and roaming guard pathfinding.
-3. Load validated product/fixture/security data and add restocking/department demand.
-4. Add Godot native FFI and replace the temporary process bridge.
-5. Add RFID/detector/ordinance systems and balance tests.
+- [ ] Replace temporary process bridge with a thin GDExtension/FFI adapter linking the same C library.
+- [ ] Add authoritative fixture vocabulary: gondolas, wall shelves, coolers/freezers, produce/dump/endcap/promo displays, locked cases, service counters, carts/baskets, pallets, cameras, EAS/RFID gates, and receipt stations.
+- [ ] Ensure every rendered asset matches the exact C footprint, rotation, isometric angle, height convention, lighting, shadow, and line weight.
+- [ ] Improve canonical isometric store-object assets; keep shoppers simpler and readable.
+- [ ] Add storefront windows, facade sections, glass/door treatment, decals, loading/receiving doors, ceiling-layer cameras, and damaged/breached presentation.
+- [ ] Add environmental dressing: sidewalks, parking stalls, roads, woods/trees, neighboring parcels, bollards, dumpsters, carts, baskets, pallets, benches, posters, signs, lights, and delivery vehicles.
+- [ ] Add sales-floor, stockroom, staff/security, roof/camera-coverage, and construction views.
+- [ ] Keep normal gameplay free of debug labels; retain F3 overlays for IDs, grid, paths, FOV, hazards, rooms, and footprints.
+- [ ] Add restrained event camera focus for detected theft, interventions, alarms, assistance, deliveries, stockouts, and long queues.
+- [ ] Add pause/1x/2x/4x controls and safe scenario restart/menu lifecycle with no orphan processes or stale pipes.
+- [ ] Verify responsive layouts at 1280×720, 1366×768, 1920×1080, and tablet-sized viewports.
+- [ ] Add Android/iOS shell integration only after the headless/core boundary remains stable.
+
+## Testing and release gates
+
+- [x] Normal Debug build and CTest.
+- [x] Sanitizer build and CTest.
+- [x] Linux CI normal + sanitizer jobs.
+- [x] Godot headless editor/runtime smoke validation.
+- [x] Deterministic scenario, staffing, geometry, stream, balance, and event lifecycle coverage.
+- [ ] Event ring overflow/order/consumer tests.
+- [ ] Theft detection/intervention matrix tests for coverage, distance, guard skill, and recovery.
+- [ ] Inventory conservation, delivery, restock, stockout, basket, return, and task determinism tests.
+- [ ] Scripted incident hazard/pathfinding/damage/objective tests.
+- [ ] Level JSON malformed-input and round-trip tests.
+- [ ] Fuzz/property tests for arbitrary construction and level commands.
+- [ ] Godot interactive validation: launcher buttons, scenario switching, Escape/menu, panning, construction, selection, event feed, repeated restart, and process cleanup.
+- [ ] Screenshot comparison for Corner Market, Electronics, Big Box, Pharmacy, and later Grocery/Turnaround.
+- [ ] Release checklist: `git diff --check`, clean worktree, all local tests, sanitizer tests, CI green, commit pushed to `origin/main`.
+
+## Next implementation order
+
+1. Inventory locations, deliveries, restocking, stockouts, and employee task assignments.
+2. Locked-case assistance, self-checkout under-scan, EAS/receipt-check tradeoffs, and richer incident metrics.
+3. Bounded official scripted hazards and scenario objective progression.
+4. Versioned JSON levels and the separate Godot store designer.
+5. Authoritative floor surfaces, richer fixtures/windows/damage, and final interactive presentation validation.
