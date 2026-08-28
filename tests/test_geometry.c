@@ -80,7 +80,7 @@ static void test_access_cell_selection(void)
 
 static void test_layout_templates(void)
 {
-    for (unsigned layout = 0U; layout < 5U; ++layout) {
+    for (unsigned layout = 0U; layout < 8U; ++layout) {
         ShrinkGeometry geometry;
         shrink_geometry_init_layout(&geometry, layout);
         assert(geometry.layout_id == layout);

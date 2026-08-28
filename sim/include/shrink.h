@@ -68,6 +68,28 @@ typedef enum ShrinkEntityState {
     SHRINK_ENTITY_LEAVING
 } ShrinkEntityState;
 
+typedef enum ShrinkCustomerArchetype {
+    SHRINK_CUSTOMER_QUICK_STOP = 1,
+    SHRINK_CUSTOMER_ROUTINE,
+    SHRINK_CUSTOMER_BARGAIN,
+    SHRINK_CUSTOMER_BROWSER,
+    SHRINK_CUSTOMER_OPPORTUNISTIC
+} ShrinkCustomerArchetype;
+typedef enum ShrinkEmployeeRole {
+    SHRINK_EMPLOYEE_CASHIER = 1,
+    SHRINK_EMPLOYEE_ASSOCIATE,
+    SHRINK_EMPLOYEE_STOCKER,
+    SHRINK_EMPLOYEE_SECURITY
+} ShrinkEmployeeRole;
+typedef struct ShrinkEmployeeSnapshot {
+    uint64_t id;
+    ShrinkEmployeeRole role;
+    double wage;
+    double skill;
+    double fatigue;
+    double morale;
+    int x, y;
+} ShrinkEmployeeSnapshot;
 typedef struct ShrinkEntitySnapshot {
     uint64_t id;
     double x;
@@ -77,6 +99,11 @@ typedef struct ShrinkEntitySnapshot {
     uint64_t target_fixture_id;
     int target_x;
     int target_y;
+    ShrinkCustomerArchetype archetype;
+    double walking_speed;
+    double patience_seconds;
+    double budget;
+    double theft_tendency;
 } ShrinkEntitySnapshot;
 
 typedef struct ShrinkMetrics {
@@ -91,6 +118,9 @@ typedef struct ShrinkMetrics {
     double profit;
     double average_checkout_wait;
     double average_satisfaction;
+    double cost_of_goods;
+    double security_cost;
+    uint64_t active_employees;
 } ShrinkMetrics;
 
 ShrinkWorld *shrink_create(uint64_t seed);
@@ -101,6 +131,8 @@ void shrink_metrics(const ShrinkWorld *world, ShrinkMetrics *out_metrics);
 size_t shrink_entity_count(const ShrinkWorld *world);
 int shrink_entity_snapshot(const ShrinkWorld *world, size_t index,
                            ShrinkEntitySnapshot *out_snapshot);
+size_t shrink_employee_count(const ShrinkWorld *world);
+int shrink_employee_snapshot(const ShrinkWorld *world, size_t index, ShrinkEmployeeSnapshot *out_snapshot);
 void shrink_geometry_info(const ShrinkWorld *world, ShrinkGeometryInfo *out_info);
 int shrink_room_snapshot(const ShrinkWorld *world, size_t index, ShrinkRoomSnapshot *out_snapshot);
 uint32_t shrink_floor_row(const ShrinkWorld *world, int y);

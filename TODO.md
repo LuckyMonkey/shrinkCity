@@ -36,11 +36,11 @@ Acceptance: a headless command sequence can build an irregular store, move every
 
 ## Priority 2 — people and heuristics
 
-- [ ] Add employee records in contiguous storage: id, role, wage, skill, fatigue, morale, shift, assignment, position, and current task.
+- [x] Add a bounded employee roster with id, role, wage, skill, fatigue, morale, assignment position, and snapshot data.
 - [ ] Add hiring, firing, wages, schedules, training/upgrades, employee statistics, and selectable employee inspector data.
 - [ ] Add roaming security guards with grid pathfinding, patrol routes, detection skill, deterrence, response time, fatigue, and coverage.
 - [ ] Add security policy toggles globally and per guard: patrol intensity, receipt checks, intervention threshold, camera monitoring, and customer-friction settings.
-- [ ] Add customer archetypes and seeded traits: shopping speed, budget, patience, basket size, theft tendency, security sensitivity, product preference, and route preference.
+- [x] Add deterministic customer archetypes and starter traits: shopping speed, budget, patience, theft tendency, and product choice.
 - [ ] Add behavior heuristics: browse, compare, seek assistance, abandon, purchase, steal, conceal, react to congestion, and react to security friction.
 - [ ] Make all simulated people move along valid authoritative grid paths and expose their current path/intent in snapshots. (Customer product target fixture/access-cell intent is implemented; full paths remain.)
 
@@ -49,7 +49,7 @@ Acceptance: two identical seeds produce identical people, assignments, routes, d
 ## Priority 3 — inventory, departments, and merchandise
 
 - [ ] Load validated `products.json`, `fixtures.json`, `security.json`, and `scenarios.json` into internal structs.
-- [ ] Add departments with item value, demand, margin, theft risk, replenishment rules, and customer preferences.
+- [x] Add starter product costs, prices, demand, theft risk, and cost-of-goods accounting.
 - [x] Route customers to product fixtures and deterministic reachable interaction cells; revalidate targets after construction changes.
 - [ ] Add shelf variants: gondola, short shelf, bin, locked shelf, clear case, clearance rack, sale display, endcap, cooler, and high-value case.
 - [ ] Add shelf capacity, facing count, item placement, stock levels, restock thresholds, and employee restocking tasks.
@@ -90,14 +90,14 @@ Acceptance: the player can build and visually inspect a non-rectangular store, u
 - [ ] Add tests for customer archetype repeatability and behavior distributions.
 - [ ] Add tests for RFID per-item/per-department/random tagging costs.
 - [ ] Add property/fuzz tests for arbitrary construction commands and bounded arrays.
-- [ ] Add deterministic replay files and a headless balance runner with CSV/JSON output.
+- [x] Add a deterministic headless balance runner with CSV output.
 - [ ] Add Godot smoke tests for snapshot parsing, fixture selection, drag placement, wall drawing, and alternate seeds.
-- [ ] Add CI on Linux for Debug, Release, sanitizer, CTest, and Godot headless validation.
+- [x] Add CI on Linux for normal + sanitizer CTest and Godot headless validation.
 
 ## Suggested next implementation order
 
-1. Move walls, doors, fixtures, rooms, and construction validation into the C core.
-2. Add employee/security records and expose them in snapshots.
-3. Add customer archetypes/traits and heuristic behavior.
+1. Add multi-door properties, expansion parcels, and construction-time topology previews.
+2. Add employee hiring/firing and roaming guard pathfinding.
+3. Load validated product/fixture/security data and add restocking/department demand.
 4. Add Godot native FFI and replace the temporary process bridge.
 5. Add RFID/detector/ordinance systems and balance tests.

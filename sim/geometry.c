@@ -273,7 +273,7 @@ static void floor_rect(ShrinkGeometry *g, int x0, int y0, int x1, int y1)
 static void set_layout_floor(ShrinkGeometry *g, unsigned layout_id)
 {
     memset(g->floor, 0, sizeof(g->floor));
-    switch (layout_id % 5U) {
+    switch (layout_id % 8U) {
         case 0: /* Convenience: clipped corners. */
             floor_rect(g, 1, 1, 26, 20);
             for (int y = 1; y <= 3; ++y) g->floor[y * g->width + 1] = 0U;
@@ -290,8 +290,17 @@ static void set_layout_floor(ShrinkGeometry *g, unsigned layout_id)
         case 3: /* Discount store with a receiving bump-out. */
             floor_rect(g, 1, 2, 18, 20); floor_rect(g, 10, 4, 26, 16);
             break;
-        default: /* Awkward inherited T-shaped location. */
+        case 4: /* Awkward inherited T-shaped location. */
             floor_rect(g, 1, 2, 18, 20); floor_rect(g, 1, 4, 26, 14);
+            break;
+        case 5: /* Corner property with a broad public frontage and small rear wing. */
+            floor_rect(g, 2, 3, 26, 18); floor_rect(g, 1, 8, 24, 13); floor_rect(g, 2, 19, 10, 20);
+            break;
+        case 6: /* Warehouse-style shell with a deep loading-side footprint. */
+            floor_rect(g, 1, 2, 26, 18); floor_rect(g, 1, 19, 18, 20);
+            break;
+        default: /* Two-wing store joined by a narrow central cross aisle. */
+            floor_rect(g, 1, 3, 12, 20); floor_rect(g, 13, 3, 26, 14); floor_rect(g, 1, 8, 26, 12);
             break;
     }
 }
@@ -310,7 +319,7 @@ void shrink_geometry_init(ShrinkGeometry *g)
 void shrink_geometry_init_layout(ShrinkGeometry *g, unsigned layout_id)
 {
     memset(g, 0, sizeof(*g));
-    g->width = 28; g->height = 22; g->layout_id = layout_id % 5U; g->next_id = 1U;
+    g->width = 28; g->height = 22; g->layout_id = layout_id % 8U; g->next_id = 1U;
     set_layout_floor(g, g->layout_id);
     add_room(g, SHRINK_ROOM_SALES_FLOOR, 2, 3, 16, 15, 1U, 1U);
     add_room(g, SHRINK_ROOM_STOCKROOM, 19, 3, 7, 6, 0U, 1U);

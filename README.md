@@ -1,6 +1,6 @@
 # Shrink City
 
-The current milestone is a headless C11 retail simulation: customers enter a small store, navigate to merchandise, purchase or steal, queue at two registers, pay, and exit. Metrics are reproducible from a seed.
+The current milestone is a headless C11 retail simulation: customers enter a small store, navigate to merchandise, purchase or steal, queue at two registers, pay, and exit. Metrics are reproducible from a seed. The current core also assigns deterministic customer archetypes/traits, employee wages, product costs, and measurable camera/security costs.
 
 ## Build and run
 
@@ -19,11 +19,11 @@ cmake --build build-asan
 ctest --test-dir build-asan --output-on-failure
 ```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for ownership, determinism, and the planned Godot boundary. `data/` contains deliberately small external content examples; v0 uses equivalent validated constants while the schema is still settling.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for ownership, determinism, and the planned Godot boundary. `data/` contains deliberately small external content examples; v0 uses equivalent validated constants while the schema is still settling. `shrink-balance` runs repeatable seed batches and emits CSV for tuning.
 
 ## Godot prototype
 
-Godot 4 is not required to build the C core. If Godot 4 is installed, open `game/` and run the project after building `build/shrink-sim`. The prototype launches `shrink-sim --stream` and renders its read-only snapshots. This process bridge is intentionally temporary and can later be replaced by GDExtension without changing simulation ownership.
+Godot 4 is not required to build the C core. If Godot 4 is installed, open `game/` and run the project after building `build/shrink-sim`. The prototype launches `shrink-sim --stream` and renders its read-only snapshots. The active V2 renderer uses a brighter tycoon palette, bounded pan/zoom, eight deterministic C-authored store shells, room tinting, full fixture footprints, and distinct staff markers. This process bridge is intentionally temporary and can later be replaced by GDExtension without changing simulation ownership.
 
 For alternate visual test runs, pass arguments after `--`: `godot --path game -- --seed=7 --ticks=120`. The C test suite also validates the snapshot stream with `ctest`. Geometry snapshots include fixture product assignments; entity snapshots include target fixture IDs and target interaction cells for routing diagnostics.
 

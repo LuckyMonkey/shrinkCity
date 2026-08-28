@@ -19,7 +19,10 @@ endif()
 
 add_executable(shrink-sim tools/shrink_sim.c)
 target_link_libraries(shrink-sim PRIVATE shrink_sim)
+add_executable(shrink-balance tools/shrink_balance.c)
+target_link_libraries(shrink-balance PRIVATE shrink_sim)
 target_compile_options(shrink-sim PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+target_compile_options(shrink-balance PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
 
 enable_testing()
 add_executable(shrink-tests tests/test_sim.c)

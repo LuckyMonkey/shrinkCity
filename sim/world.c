@@ -12,7 +12,19 @@
 #define REGISTER_COUNT 2U
 #define PRODUCT_COUNT 4U
 #define OPEN_SECONDS_PER_DAY 600.0
-#define SPAWN_INTERVAL 8.0
+#define SPAWN_INTERVAL 6.0
+#define EMPLOYEE_COUNT 4U
+
+typedef struct ShrinkBalanceConfig {
+    double spawn_interval;
+    double base_theft_rate;
+    double camera_deterrence;
+    double guard_deterrence;
+    double camera_maintenance_per_second;
+    double checkout_seconds;
+} ShrinkBalanceConfig;
+
+static const ShrinkBalanceConfig BALANCE = {6.0, 0.16, 0.08, 0.12, 0.006, 20.0};
 
 typedef enum CustomerState {
     CUSTOMER_UNUSED,
@@ -23,9 +35,14 @@ typedef enum CustomerState {
     CUSTOMER_LEAVING
 } CustomerState;
 
-typedef struct Product { double price; unsigned stock; } Product;
+typedef struct Product { double cost; double price; double demand; double theft_risk; unsigned stock; } Product;
 typedef struct Customer {
     CustomerState state;
+    ShrinkCustomerArchetype archetype;
+    double walking_speed;
+    double patience_seconds;
+    double budget;
+    double theft_tendency;
     double x, y;
     double target_x, target_y;
     uint64_t target_fixture_id;
@@ -35,6 +52,16 @@ typedef struct Customer {
     unsigned register_id;
     uint64_t id;
 } Customer;
+
+typedef struct Employee {
+    uint64_t id;
+    ShrinkEmployeeRole role;
+    double wage;
+    double skill;
+    double fatigue;
+    double morale;
+    int x, y;
+} Employee;
 
 struct ShrinkWorld {
     uint64_t seed;
@@ -52,6 +79,7 @@ struct ShrinkWorld {
     double satisfaction_sum;
     double checkout_wait_sum;
     uint64_t satisfaction_count;
+    Employee employees[EMPLOYEE_COUNT];
 };
 
 static uint64_t rng_next(ShrinkWorld *world)
@@ -77,7 +105,7 @@ static double distance_to(double x, double y, double target_x, double target_y)
 
 static void move_toward(Customer *customer, double dt, const unsigned char *blocked, int width, int height)
 {
-    const double speed = 3.0;
+    const double speed = customer->walking_speed;
     const int start_x = (int)lround(customer->x), start_y = (int)lround(customer->y);
     const int goal_x = (int)lround(customer->target_x), goal_y = (int)lround(customer->target_y);
     int next_x = goal_x, next_y = goal_y;
@@ -191,6 +219,14 @@ static void spawn_customer(ShrinkWorld *world)
             if (entrance == NULL) return;
             customer->state = CUSTOMER_TO_PRODUCT;
             customer->x = (double)entrance->x; customer->y = (double)entrance->y;
+            customer->archetype = (ShrinkCustomerArchetype)(SHRINK_CUSTOMER_QUICK_STOP + (rng_next(world) % 5U));
+            customer->walking_speed = 2.3 + random_unit(world) * 1.8;
+            customer->patience_seconds = 35.0 + random_unit(world) * 90.0;
+            customer->budget = 5.0 + random_unit(world) * 25.0;
+            customer->theft_tendency = 0.05 + random_unit(world) * 0.38;
+            if (customer->archetype == SHRINK_CUSTOMER_QUICK_STOP) { customer->walking_speed += 0.7; customer->patience_seconds -= 10.0; }
+            else if (customer->archetype == SHRINK_CUSTOMER_BARGAIN) customer->budget += 8.0;
+            else if (customer->archetype == SHRINK_CUSTOMER_OPPORTUNISTIC) customer->theft_tendency += 0.25;
             customer->target_fixture_id = entrance->id;
             customer->wait_seconds = 0.0;
             customer->satisfaction = 100.0;
@@ -211,7 +247,7 @@ static void spawn_customer(ShrinkWorld *world)
 static void decide_purchase(ShrinkWorld *world, Customer *customer)
 {
     Product *product = &world->products[customer->product];
-    if (product->stock == 0U) {
+    if (product->stock == 0U || product->price > customer->budget) {
         world->metrics.abandoned++;
         customer->satisfaction -= 25.0;
         begin_leaving(world, customer);
@@ -219,7 +255,12 @@ static void decide_purchase(ShrinkWorld *world, Customer *customer)
     }
     product->stock--;
     /* Two cameras cover the merchandise aisles; their combined effect is deterministic. */
-    const double theft_probability = 0.16 * (1.0 - 0.55);
+    unsigned cameras = 0U;
+    for (size_t i = 0U; i < world->geometry.fixture_count; ++i) cameras += world->geometry.fixtures[i].type == SHRINK_FIXTURE_CAMERA;
+    unsigned guards = 0U;
+    for (size_t i = 0U; i < EMPLOYEE_COUNT; ++i) guards += world->employees[i].role == SHRINK_EMPLOYEE_SECURITY;
+    const double deterrence = fmin(0.85, cameras * BALANCE.camera_deterrence + guards * BALANCE.guard_deterrence);
+    const double theft_probability = product->theft_risk * (1.0 - deterrence) * (0.65 + customer->theft_tendency);
     if (random_unit(world) < theft_probability) {
         world->metrics.thefts++;
         world->metrics.stolen_value += product->price;
@@ -242,7 +283,7 @@ static void assign_queues(ShrinkWorld *world)
                 customer->state = CUSTOMER_CHECKOUT;
                 customer->register_id = r;
                 world->register_customer[r] = customer->id;
-                world->register_timer[r] = 20.0;
+                world->register_timer[r] = BALANCE.checkout_seconds;
                 break;
             }
         }
@@ -261,6 +302,7 @@ static void update_registers(ShrinkWorld *world, double dt)
                 world->metrics.purchases++;
                 world->metrics.customers_served++;
                 world->metrics.revenue += product->price;
+                world->metrics.cost_of_goods += product->cost;
                 world->checkout_wait_sum += customer->wait_seconds;
                 begin_leaving(world, customer);
             }
@@ -275,12 +317,17 @@ ShrinkWorld *shrink_create(uint64_t seed)
     ShrinkWorld *world = calloc(1, sizeof(*world));
     if (world == NULL) return NULL;
     world->seed = seed == 0U ? UINT64_C(88172645463393265) : seed;
-    shrink_geometry_init_layout(&world->geometry, (unsigned)(world->seed % 5U));
+    shrink_geometry_init_layout(&world->geometry, (unsigned)(world->seed % 8U));
     const double prices[PRODUCT_COUNT] = { 2.49, 3.99, 1.79, 5.49 };
+    const double costs[PRODUCT_COUNT] = { 1.05, 1.55, 0.62, 2.20 };
+    const double risks[PRODUCT_COUNT] = { 0.16, 0.11, 0.13, 0.27 };
     for (size_t i = 0; i < PRODUCT_COUNT; ++i) {
-        world->products[i].price = prices[i];
-        world->products[i].stock = 100U;
+        world->products[i].cost = costs[i]; world->products[i].price = prices[i];
+        world->products[i].demand = 1.0; world->products[i].theft_risk = risks[i]; world->products[i].stock = 100U;
     }
+    const ShrinkEmployeeRole roles[EMPLOYEE_COUNT] = {SHRINK_EMPLOYEE_CASHIER, SHRINK_EMPLOYEE_CASHIER, SHRINK_EMPLOYEE_ASSOCIATE, SHRINK_EMPLOYEE_SECURITY};
+    const double wages[EMPLOYEE_COUNT] = {18.0, 18.0, 17.0, 22.0};
+    for (size_t i = 0U; i < EMPLOYEE_COUNT; ++i) world->employees[i] = (Employee){i + 1U, roles[i], wages[i], 0.75 + 0.05 * (double)i, 0.0, 1.0, 14 + (int)i, 8};
     return world;
 }
 
@@ -291,7 +338,13 @@ void shrink_tick(ShrinkWorld *world, double dt_seconds)
     if (world == NULL || !(dt_seconds > 0.0) || !isfinite(dt_seconds)) return;
     world->ticks++;
     world->time += dt_seconds;
-    world->metrics.labor_cost += 0.0133333333333333 * dt_seconds;
+    for (size_t i = 0U; i < EMPLOYEE_COUNT; ++i) {
+        world->employees[i].fatigue = fmin(1.0, world->employees[i].fatigue + dt_seconds / 36000.0);
+        world->metrics.labor_cost += world->employees[i].wage / 3600.0 * dt_seconds;
+    }
+    unsigned camera_count = 0U;
+    for (size_t i = 0U; i < world->geometry.fixture_count; ++i) camera_count += world->geometry.fixtures[i].type == SHRINK_FIXTURE_CAMERA;
+    world->metrics.security_cost += camera_count * BALANCE.camera_maintenance_per_second * dt_seconds;
     world->spawn_timer -= dt_seconds;
     unsigned char blocked[SHRINK_MAX_CELLS];
     shrink_geometry_blocked_map(&world->geometry, blocked);
@@ -317,7 +370,9 @@ void shrink_tick(ShrinkWorld *world, double dt_seconds)
             decide_purchase(world, customer);
         } else if (customer->state == CUSTOMER_WAITING) {
             customer->wait_seconds += dt_seconds;
+            customer->patience_seconds -= dt_seconds;
             customer->satisfaction -= 0.025 * dt_seconds;
+            if (customer->patience_seconds <= 0.0) { world->metrics.abandoned++; begin_leaving(world, customer); }
         } else if (customer->state == CUSTOMER_LEAVING && reached_target(customer)) {
             world->satisfaction_sum += fmax(0.0, customer->satisfaction);
             world->satisfaction_count++;
@@ -327,11 +382,12 @@ void shrink_tick(ShrinkWorld *world, double dt_seconds)
     update_registers(world, dt_seconds);
     assign_queues(world);
     world->metrics.labor_cost = round(world->metrics.labor_cost * 100.0) / 100.0;
-    world->metrics.profit = world->metrics.revenue - world->metrics.stolen_value - world->metrics.labor_cost;
+    world->metrics.profit = world->metrics.revenue - world->metrics.cost_of_goods - world->metrics.stolen_value - world->metrics.labor_cost - world->metrics.security_cost;
     world->metrics.average_checkout_wait = world->metrics.purchases == 0U ? 0.0 :
         world->checkout_wait_sum / (double)world->metrics.purchases;
     world->metrics.average_satisfaction = world->satisfaction_count == 0U ? 100.0 :
         world->satisfaction_sum / (double)world->satisfaction_count;
+    world->metrics.active_employees = EMPLOYEE_COUNT;
 }
 
 uint64_t shrink_tick_count(const ShrinkWorld *world) { return world == NULL ? 0U : world->ticks; }
@@ -357,6 +413,11 @@ int shrink_entity_snapshot(const ShrinkWorld *world, size_t index, ShrinkEntityS
         out_snapshot->target_fixture_id = customer->target_fixture_id;
         out_snapshot->target_x = (int)lround(customer->target_x);
         out_snapshot->target_y = (int)lround(customer->target_y);
+        out_snapshot->archetype = customer->archetype;
+        out_snapshot->walking_speed = customer->walking_speed;
+        out_snapshot->patience_seconds = customer->patience_seconds;
+        out_snapshot->budget = customer->budget;
+        out_snapshot->theft_tendency = customer->theft_tendency;
         return 1;
     }
     return 0;
@@ -372,6 +433,16 @@ int shrink_room_snapshot(const ShrinkWorld *world, size_t index, ShrinkRoomSnaps
     if (world == NULL || out_snapshot == NULL || index >= world->geometry.room_count) return 0;
     const ShrinkRoom *room = &world->geometry.rooms[index];
     *out_snapshot = (ShrinkRoomSnapshot){room->id, room->type, room->x, room->y, room->width, room->height, (int)room->customer_accessible, (int)room->staff_accessible};
+    return 1;
+}
+
+size_t shrink_employee_count(const ShrinkWorld *world) { return world == NULL ? 0U : EMPLOYEE_COUNT; }
+
+int shrink_employee_snapshot(const ShrinkWorld *world, size_t index, ShrinkEmployeeSnapshot *out_snapshot)
+{
+    if (world == NULL || out_snapshot == NULL || index >= EMPLOYEE_COUNT) return 0;
+    const Employee *employee = &world->employees[index];
+    *out_snapshot = (ShrinkEmployeeSnapshot){employee->id, employee->role, employee->wage, employee->skill, employee->fatigue, employee->morale, employee->x, employee->y};
     return 1;
 }
 

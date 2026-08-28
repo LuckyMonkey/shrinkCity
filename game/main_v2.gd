@@ -12,6 +12,7 @@ var walls: Array[Dictionary] = []
 var rooms: Array[Dictionary] = []
 var floor_rows: Array[int] = []
 var metrics := {}
+var employees: Array[Dictionary] = []
 var geometry_width := 28
 var geometry_height := 22
 var layout_id := 0
@@ -85,7 +86,7 @@ func _consume_line(line: String) -> void:
             if f.size() >= 3:
                 geometry_width = int(f[1]); geometry_height = int(f[2])
                 layout_id = int(f[5]) if f.size() >= 6 else 0
-                floor_rows.clear(); fixtures.clear(); rooms.clear(); walls.clear()
+                floor_rows.clear(); fixtures.clear(); rooms.clear(); walls.clear(); employees.clear()
                 for _y in range(geometry_height): floor_rows.append(0)
         "FLOOR":
             if f.size() >= 3:
@@ -107,7 +108,9 @@ func _consume_line(line: String) -> void:
                 entities.clear()
         "ENTITY":
             if f.size() >= 6:
-                entities[f[1]] = {"id":int(f[1]), "state":int(f[2]), "x":float(f[3]), "y":float(f[4]), "product":int(f[5]), "target_fixture_id":int(f[6]) if f.size() >= 7 else 0, "target_x":int(f[7]) if f.size() >= 8 else 0, "target_y":int(f[8]) if f.size() >= 9 else 0}
+                entities[f[1]] = {"id":int(f[1]), "state":int(f[2]), "x":float(f[3]), "y":float(f[4]), "product":int(f[5]), "target_fixture_id":int(f[6]) if f.size() >= 7 else 0, "target_x":int(f[7]) if f.size() >= 8 else 0, "target_y":int(f[8]) if f.size() >= 9 else 0, "archetype":int(f[9]) if f.size() >= 10 else 0, "speed":float(f[10]) if f.size() >= 11 else 0.0, "patience":float(f[11]) if f.size() >= 12 else 0.0, "budget":float(f[12]) if f.size() >= 13 else 0.0, "theft_tendency":float(f[13]) if f.size() >= 14 else 0.0}
+        "EMPLOYEE":
+            if f.size() >= 9: employees.append({"id":int(f[1]), "role":int(f[2]), "wage":float(f[3]), "skill":float(f[4]), "fatigue":float(f[5]), "morale":float(f[6]), "x":int(f[7]), "y":int(f[8])})
         "COMMAND":
             if f.size() >= 2:
                 var status := int(f[1])
@@ -153,7 +156,7 @@ func _floor_color(x: int, y: int) -> Color:
     return c.lightened(0.035) if (x + y) % 2 == 0 else c.darkened(0.025)
 
 func _draw() -> void:
-    draw_rect(Rect2(0,0,1280,720), Color("#0d141a"))
+    draw_rect(Rect2(0,0,1280,720), Color("#dce8df"))
     draw_set_transform(view_offset, 0.0, Vector2(zoom,zoom))
     _draw_site()
     _draw_floor()
@@ -163,6 +166,7 @@ func _draw() -> void:
     _draw_frontage()
     _draw_fixtures()
     _draw_people()
+    _draw_employees()
     _draw_build_preview()
     if debug_overlay: _draw_debug_overlay()
     draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
@@ -174,10 +178,10 @@ func _draw_site() -> void:
         for x in range(-4, geometry_width + 5):
             if _inside(x,y): continue
             var c := _iso(Vector2(x,y))
-            var color := Color("#526a4d")
-            if y >= geometry_height + 1: color = Color("#444b50")
+            var color := Color("#88aa7d")
+            if y >= geometry_height + 1: color = Color("#7a8584")
             elif x <= 1 and y >= 8 and y <= 16: color = Color("#8c8779")
-            elif (x * 7 + y * 11) % 8 == 0: color = Color("#486244")
+            elif (x * 7 + y * 11) % 8 == 0: color = Color("#719968")
             draw_colored_polygon(_diamond(c), color)
     for x in range(1, 20, 3):
         var p := _iso(Vector2(x, geometry_height + 3))
@@ -324,6 +328,14 @@ func _draw_people() -> void:
         var variant := int(e.id) % 6
         _sprite_region(variant,p,Vector2(34,43))
 
+func _draw_employees() -> void:
+    for employee in employees:
+        var p := _iso(Vector2(int(employee.x), int(employee.y)))
+        draw_circle(p + Vector2(0, -16), 6.0, Color("#f0a34a"))
+        draw_rect(Rect2(p.x - 6, p.y - 12, 12, 12), Color("#df7d3d"))
+        if int(employee.role) == 4:
+            draw_line(p + Vector2(-8, -7), p + Vector2(8, -7), Color("#6e4c9b"), 3.0)
+
 func draw_ellipse_shadow(p: Vector2) -> void:
     draw_circle(p+Vector2(0,-1),10,Color(0.03,0.04,0.04,0.28))
 
@@ -359,37 +371,39 @@ func _draw_build_preview() -> void:
 
 func _draw_hud() -> void:
     # Top command bar
-    draw_rect(Rect2(0,0,1280,58),Color("#121c23"))
-    draw_string(ThemeDB.fallback_font,Vector2(24,36),"SHRINK CITY",HORIZONTAL_ALIGNMENT_LEFT,-1,25,Color("#f0e7d5"))
-    draw_string(ThemeDB.fallback_font,Vector2(185,34),"DAY 1  •  LAYOUT %d  •  %d shoppers" % [layout_id + 1, entities.size()],HORIZONTAL_ALIGNMENT_LEFT,-1,14,Color("#9fb2bd"))
+    draw_rect(Rect2(0,0,1280,58),Color("#f2eee2"))
+    draw_string(ThemeDB.fallback_font,Vector2(24,36),"SHRINK CITY",HORIZONTAL_ALIGNMENT_LEFT,-1,25,Color("#294047"))
+    draw_string(ThemeDB.fallback_font,Vector2(185,34),"DAY 1  •  LAYOUT %d  •  %d shoppers" % [layout_id + 1, entities.size()],HORIZONTAL_ALIGNMENT_LEFT,-1,14,Color("#587078"))
     _metric_chip(Vector2(430,12),"SALES","$%.0f" % metrics.get("revenue",0.0),Color("#79b986"))
     _metric_chip(Vector2(560,12),"SHRINK","$%.0f" % metrics.get("shrink",0.0),Color("#d87870"))
     _metric_chip(Vector2(690,12),"WAIT","%.0fs" % metrics.get("wait",0.0),Color("#d4b367"))
-    _metric_chip(Vector2(820,12),"SAT","%.0f%%" % metrics.get("satisfaction",100.0),Color("#7da8c4"))
+    _metric_chip(Vector2(820,12),"SAT","%.0f%%" % metrics.get("satisfaction",100.0),Color("#54a5ad"))
+    _metric_chip(Vector2(950,12),"STAFF","%d" % employees.size(),Color("#d28b4e"))
 
     # Inspector / store summary
-    draw_rect(Rect2(1018,70,250,555),Color("#18252e"))
-    draw_string(ThemeDB.fallback_font,Vector2(1038,103),"STORE MANAGER",HORIZONTAL_ALIGNMENT_LEFT,-1,18,Color("#f2eadb"))
-    draw_string(ThemeDB.fallback_font,Vector2(1038,130),"Operating snapshot",HORIZONTAL_ALIGNMENT_LEFT,-1,12,Color("#8fa4af"))
-    draw_string(ThemeDB.fallback_font,Vector2(1038,174),"Revenue",HORIZONTAL_ALIGNMENT_LEFT,-1,13,Color("#8fa4af"))
+    draw_rect(Rect2(1018,70,250,555),Color("#edf3ed"))
+    draw_string(ThemeDB.fallback_font,Vector2(1038,103),"STORE MANAGER",HORIZONTAL_ALIGNMENT_LEFT,-1,18,Color("#30464b"))
+    draw_string(ThemeDB.fallback_font,Vector2(1038,130),"Operating snapshot",HORIZONTAL_ALIGNMENT_LEFT,-1,12,Color("#60787d"))
+    draw_string(ThemeDB.fallback_font,Vector2(1038,174),"Revenue",HORIZONTAL_ALIGNMENT_LEFT,-1,13,Color("#60787d"))
     draw_string(ThemeDB.fallback_font,Vector2(1180,174),"$%.2f" % metrics.get("revenue",0.0),HORIZONTAL_ALIGNMENT_RIGHT,68,16,Color("#d9ead7"))
-    draw_string(ThemeDB.fallback_font,Vector2(1038,202),"Labor",HORIZONTAL_ALIGNMENT_LEFT,-1,13,Color("#8fa4af"))
+    draw_string(ThemeDB.fallback_font,Vector2(1038,202),"Labor",HORIZONTAL_ALIGNMENT_LEFT,-1,13,Color("#60787d"))
     draw_string(ThemeDB.fallback_font,Vector2(1180,202),"$%.2f" % metrics.get("labor",0.0),HORIZONTAL_ALIGNMENT_RIGHT,68,16,Color("#e7ddd0"))
-    draw_string(ThemeDB.fallback_font,Vector2(1038,230),"Shrink",HORIZONTAL_ALIGNMENT_LEFT,-1,13,Color("#8fa4af"))
+    draw_string(ThemeDB.fallback_font,Vector2(1038,230),"Shrink",HORIZONTAL_ALIGNMENT_LEFT,-1,13,Color("#60787d"))
     draw_string(ThemeDB.fallback_font,Vector2(1180,230),"$%.2f" % metrics.get("shrink",0.0),HORIZONTAL_ALIGNMENT_RIGHT,68,16,Color("#e6a19d"))
-    draw_line(Vector2(1038,252),Vector2(1245,252),Color("#33454f"),1)
-    draw_string(ThemeDB.fallback_font,Vector2(1038,286),"INSPECTOR",HORIZONTAL_ALIGNMENT_LEFT,-1,14,Color("#f2eadb"))
+    draw_line(Vector2(1038,252),Vector2(1245,252),Color("#b8c9c0"),1)
+    draw_string(ThemeDB.fallback_font,Vector2(1038,286),"INSPECTOR",HORIZONTAL_ALIGNMENT_LEFT,-1,14,Color("#30464b"))
     if selected.is_empty():
-        draw_multiline_string(ThemeDB.fallback_font,Vector2(1038,316),"Select a shopper or fixture.\n\nDrag to pan • wheel to zoom\nB toggles build mode\n1–8 picks fixture",HORIZONTAL_ALIGNMENT_LEFT,200,13,21,Color("#91a6b0"))
+        draw_multiline_string(ThemeDB.fallback_font,Vector2(1038,316),"Select a shopper or fixture.\n\nDrag to pan • wheel to zoom\nB toggles build mode\n1–8 picks fixture",HORIZONTAL_ALIGNMENT_LEFT,200,13,21,Color("#587078"))
     else:
         var txt := "%s\nID %s\nTile %s, %s" % [selected.get("kind","Shopper").capitalize(),selected.get("id","—"),selected.get("x","—"),selected.get("y","—")]
         if selected.has("product") and int(selected.get("product", -1)) >= 0: txt += "\nProduct: %s" % [PRODUCT_SYMBOLS[int(selected.product)]]
         if selected.has("width"): txt += "\nFootprint: %sx%s" % [selected.width, selected.height]
         if selected.has("target_fixture_id"): txt += "\nTarget fixture %s\nAccess cell %s, %s" % [selected.target_fixture_id, selected.target_x, selected.target_y]
-        draw_multiline_string(ThemeDB.fallback_font,Vector2(1038,316),txt,HORIZONTAL_ALIGNMENT_LEFT,200,14,23,Color("#dfd4c3"))
+        if selected.has("archetype"): txt += "\nArchetype %s\nBudget $%.2f\nPatience %.0fs" % [selected.archetype, selected.budget, selected.patience]
+        draw_multiline_string(ThemeDB.fallback_font,Vector2(1038,316),txt,HORIZONTAL_ALIGNMENT_LEFT,200,14,23,Color("#30464b"))
 
     # Bottom build palette: much closer to classic tycoon controls than debug hotkey text.
-    draw_rect(Rect2(18,636,982,68),Color("#17232b"))
+    draw_rect(Rect2(18,636,982,68),Color("#e7efe8"))
     draw_string(ThemeDB.fallback_font,Vector2(30,660),"BUILD" if build_mode else "TOOLS",HORIZONTAL_ALIGNMENT_LEFT,-1,13,Color("#9fb2bd"))
     for i in range(BUILD_ORDER.size()):
         var key: String = BUILD_ORDER[i]
@@ -398,13 +412,13 @@ func _draw_hud() -> void:
         var active := build_mode and build_kind == key
         draw_rect(r,Color("#38515d") if active else Color("#24343d"))
         draw_rect(Rect2(r.position,Vector2(5,r.size.y)),d.color)
-        draw_string(ThemeDB.fallback_font,r.position+Vector2(12,18),"%d  %s" % [i+1,d.name],HORIZONTAL_ALIGNMENT_LEFT,82,11,Color("#eee5d4"))
-        draw_string(ThemeDB.fallback_font,r.position+Vector2(12,36),"$%d" % d.cost,HORIZONTAL_ALIGNMENT_LEFT,82,10,Color("#a9bac1"))
+        draw_string(ThemeDB.fallback_font,r.position+Vector2(12,18),"%d  %s" % [i+1,d.name],HORIZONTAL_ALIGNMENT_LEFT,82,11,Color("#30464b"))
+        draw_string(ThemeDB.fallback_font,r.position+Vector2(12,36),"$%d" % d.cost,HORIZONTAL_ALIGNMENT_LEFT,82,10,Color("#60787d"))
     if feedback_time > 0.0: draw_string(ThemeDB.fallback_font,Vector2(1038,600),command_feedback,HORIZONTAL_ALIGNMENT_LEFT,205,12,Color("#8bd19a") if command_feedback == "Construction accepted" else Color("#e57e76"))
     elif process_error != "": draw_string(ThemeDB.fallback_font,Vector2(1038,600),process_error,HORIZONTAL_ALIGNMENT_LEFT,205,12,Color("#e57e76"))
 
 func _metric_chip(pos: Vector2, label: String, value: String, accent: Color) -> void:
-    draw_rect(Rect2(pos,Vector2(116,34)),Color("#1e2d35"))
+    draw_rect(Rect2(pos,Vector2(116,34)),Color("#dbe8df"))
     draw_rect(Rect2(pos,Vector2(4,34)),accent)
     draw_string(ThemeDB.fallback_font,pos+Vector2(12,14),label,HORIZONTAL_ALIGNMENT_LEFT,-1,9,Color("#8fa3ad"))
     draw_string(ThemeDB.fallback_font,pos+Vector2(12,29),value,HORIZONTAL_ALIGNMENT_LEFT,-1,14,Color("#eee6d8"))
@@ -454,7 +468,10 @@ func _input(event: InputEvent) -> void:
             if _inside(int(tile.x), int(tile.y)):
                 for f in fixtures:
                     if int(f.id) == dragged_id: f.x = int(tile.x); f.y = int(tile.y); selected = f; break
-        elif dragging: view_offset += event.relative
+        elif dragging:
+            view_offset += event.relative
+            view_offset.x = clamp(view_offset.x, -90.0, 125.0)
+            view_offset.y = clamp(view_offset.y, 25.0, 115.0)
     elif event is InputEventKey and event.pressed and not event.echo:
         if event.keycode == KEY_B: build_mode = not build_mode
         elif event.keycode == KEY_ESCAPE: build_mode = false; dragging = false; dragged_fixture = false; selected = {}
@@ -482,7 +499,7 @@ func _select_at(pos: Vector2) -> void:
     var best := 28.0
     for e in entities.values():
         var d := _screen(Vector2(e.x, e.y)).distance_to(pos)
-        if d < best: best = d; selected = {"id":e.id,"kind":"shopper","x":snapped(e.x,0.1),"y":snapped(e.y,0.1),"product":e.product,"target_fixture_id":e.target_fixture_id,"target_x":e.target_x,"target_y":e.target_y}
+        if d < best: best = d; selected = {"id":e.id,"kind":"shopper","x":snapped(e.x,0.1),"y":snapped(e.y,0.1),"product":e.product,"target_fixture_id":e.target_fixture_id,"target_x":e.target_x,"target_y":e.target_y,"archetype":e.archetype,"budget":e.budget,"patience":e.patience}
 
 func _draw_debug_overlay() -> void:
     for y in range(geometry_height):

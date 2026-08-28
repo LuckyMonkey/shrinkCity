@@ -74,16 +74,22 @@ static void stream_frame(const ShrinkWorld *world)
     shrink_metrics(world, &metrics);
     const size_t count = shrink_entity_count(world);
     stream_geometry(world);
+    for (size_t i = 0U; i < shrink_employee_count(world); ++i) {
+        ShrinkEmployeeSnapshot employee;
+        if (shrink_employee_snapshot(world, i, &employee)) printf("EMPLOYEE %llu %d %.2f %.2f %.2f %.2f %d %d\n", (unsigned long long)employee.id, (int)employee.role, employee.wage, employee.skill, employee.fatigue, employee.morale, employee.x, employee.y);
+    }
     printf("TICK %llu %zu %.2f %.2f %.2f %.2f %.2f\n",
            (unsigned long long)shrink_tick_count(world), count, metrics.revenue,
            metrics.stolen_value, metrics.labor_cost, metrics.average_checkout_wait,
            metrics.average_satisfaction);
+    printf("BALANCE %.2f %.2f %llu\n", metrics.cost_of_goods, metrics.security_cost, (unsigned long long)metrics.active_employees);
     for (size_t i = 0; i < count; ++i) {
         ShrinkEntitySnapshot entity;
         if (shrink_entity_snapshot(world, i, &entity))
-            printf("ENTITY %llu %d %.3f %.3f %u %llu %d %d\n", (unsigned long long)entity.id,
+            printf("ENTITY %llu %d %.3f %.3f %u %llu %d %d %d %.2f %.1f %.2f %.2f\n", (unsigned long long)entity.id,
                    (int)entity.state, entity.x, entity.y, entity.product,
-                   (unsigned long long)entity.target_fixture_id, entity.target_x, entity.target_y);
+                   (unsigned long long)entity.target_fixture_id, entity.target_x, entity.target_y,
+                   (int)entity.archetype, entity.walking_speed, entity.patience_seconds, entity.budget, entity.theft_tendency);
     }
     fflush(stdout);
 }
@@ -124,7 +130,7 @@ int main(int argc, char **argv)
     shrink_metrics(world, &m);
     printf("Shrink City simulation\nSeed: %" PRIu64 "\nTicks: %" PRIu64 "\n\n", seed, shrink_tick_count(world));
     printf("Customers entered: %" PRIu64 "\nPurchases: %" PRIu64 "\nAbandoned: %" PRIu64 "\nThefts: %" PRIu64 "\n\n", m.customers_entered, m.purchases, m.abandoned, m.thefts);
-    printf("Revenue: $%.2f\nShrink: $%.2f\nLabor: $%.2f\nProfit: $%.2f\n\n", m.revenue, m.stolen_value, m.labor_cost, m.profit);
+    printf("Revenue: $%.2f\nCOGS: $%.2f\nShrink: $%.2f\nLabor: $%.2f\nSecurity: $%.2f\nProfit: $%.2f\n\n", m.revenue, m.cost_of_goods, m.stolen_value, m.labor_cost, m.security_cost, m.profit);
     printf("Average checkout wait: %.1f sec\nAverage satisfaction: %.1f%%\n", m.average_checkout_wait, m.average_satisfaction);
     shrink_destroy(world);
     return 0;

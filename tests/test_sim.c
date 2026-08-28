@@ -122,7 +122,21 @@ int main(void)
     assert(shrink_entity_snapshot(snapshot_world, 0U, &entity) == 1);
     assert(entity.id == 1U);
     assert(entity.x >= 1.0 && entity.x <= 19.0);
+    assert(entity.archetype >= SHRINK_CUSTOMER_QUICK_STOP && entity.archetype <= SHRINK_CUSTOMER_OPPORTUNISTIC);
+    assert(entity.walking_speed > 0.0 && entity.patience_seconds > 0.0 && entity.budget > 0.0);
+    ShrinkWorld *same_world = shrink_create(99U);
+    assert(same_world != NULL);
+    shrink_tick(same_world, 1.0);
+    ShrinkEntitySnapshot same_entity;
+    assert(shrink_entity_snapshot(same_world, 0U, &same_entity) == 1);
+    assert(entity.product == same_entity.product && entity.archetype == same_entity.archetype);
+    assert(entity.walking_speed == same_entity.walking_speed);
+    assert(shrink_employee_count(snapshot_world) == 4U);
+    ShrinkEmployeeSnapshot employee;
+    assert(shrink_employee_snapshot(snapshot_world, 3U, &employee) == 1);
+    assert(employee.role == SHRINK_EMPLOYEE_SECURITY && employee.wage > 0.0);
     assert(shrink_entity_snapshot(snapshot_world, 1U, &entity) == 0);
+    shrink_destroy(same_world);
     shrink_destroy(snapshot_world);
 
     const ShrinkMetrics first = run(12345U);
@@ -133,7 +147,7 @@ int main(void)
     assert(first.thefts > 0U);
     assert(first.revenue > 0.0);
     assert(first.stolen_value > 0.0);
-    assert(fabs(first.profit - (first.revenue - first.stolen_value - first.labor_cost)) < 0.001);
+    assert(fabs(first.profit - (first.revenue - first.cost_of_goods - first.stolen_value - first.labor_cost - first.security_cost)) < 0.001);
     assert(first.average_checkout_wait >= 0.0);
     assert(first.average_satisfaction >= 0.0 && first.average_satisfaction <= 100.0);
     puts("shrink-tests: all assertions passed");
