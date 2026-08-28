@@ -1,8 +1,8 @@
 # Shrink City
 
-Shrink City is a C11 + Godot retail loss-prevention tycoon prototype. Customers enter an authoritative C-authored store, navigate to merchandise, purchase or steal, queue, pay, and exit. The simulation is deterministic from its seed and now includes customer archetypes/traits, dynamic employee records, product economics, spatial camera/guard deterrence, construction, and measurable security/labor costs.
+Shrink City is a C11 + Godot retail loss-prevention tycoon prototype. Customers enter an authoritative C-authored store, navigate to merchandise, purchase or steal, queue, pay, and exit. The simulation is deterministic from its seed and includes customer archetypes/traits, dynamic employee records, product economics, spatial camera/guard deterrence, construction, and measurable security/labor costs.
 
-The design target is not simply “catch shoplifters.” The player balances shrink against sales, customer friction, labor, throughput, inventory availability, and capital cost. See [GAMEPLAY.md](GAMEPLAY.md) for the scenario/attract-mode plan and the growing list of real retail systems.
+The design target is not simply “catch shoplifters.” The player balances shrink against sales, customer friction, labor, throughput, inventory availability, and capital cost. See [GAMEPLAY.md](GAMEPLAY.md) for the broader scenario roadmap and real-retail systems backlog.
 
 ## Build and run
 
@@ -25,22 +25,55 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for ownership, determinism, and the plann
 
 `shrink-balance` runs controlled, repeatable seed batches. It can compare authored stores against camera and staffing strategies (`authored`, `no_cameras`, `extra_cameras`, `no_guard`, `extra_guard`, and `lean_staff`) so balance changes can be tested instead of tuned only by feel.
 
+## Scenarios
+
+Scenarios are now first-class C-side presets rather than Godot-only labels. List them with:
+
+```sh
+./build/shrink-sim --list-scenarios
+```
+
+Run one headlessly:
+
+```sh
+./build/shrink-sim --scenario electronics --days 10 --seed 0
+```
+
+Or stream it for presentation:
+
+```sh
+./build/shrink-sim --scenario corner-market --stream --realtime --ticks 3600
+```
+
+Initial implemented presets are:
+
+- `corner-market` — lean convenience/grocery operation
+- `electronics` — high-value merchandise, extra cameras, locked cases, and heavier LP staffing
+- `big-box` — larger staffing footprint and rush-oriented checkout pressure
+- `pharmacy` — smaller concealable merchandise/security-friction scenario
+
+Scenario variation seeds advance in multiples of the layout count so a scenario keeps its intended curated shell while remaining deterministic.
+
+## Authoritative stream events
+
+The temporary text bridge now emits event records derived from authoritative simulation changes, including shopper entry, completed purchases, recorded thefts, and abandoned trips. These are intentionally small for the first pass; the next milestone is to move richer incident events directly into the C core (attempted theft, detection, intervention, assistance, stockouts, receiving, returns, spills, and other operations).
+
 ## Godot prototype
 
-Godot 4 is not required to build the C core. If Godot 4 is installed, open `game/` and run the project after building `build/shrink-sim`. The prototype launches `shrink-sim --stream` and renders its read-only snapshots. The active V2 renderer uses a brighter tycoon palette, bounded pan/zoom, eight deterministic C-authored store shells, room tinting, full fixture footprints, and distinct staff markers. This process bridge is intentionally temporary and can later be replaced by GDExtension without changing simulation ownership.
+Godot 4 is not required to build the C core. If Godot 4 is installed, open `game/` and run the project after building `build/shrink-sim`.
 
-For alternate visual test runs, pass arguments after `--`: `godot --path game -- --seed=7 --ticks=120`. The C test suite also validates the snapshot stream with `ctest`. Geometry snapshots include fixture product assignments; entity snapshots include target fixture IDs and target interaction cells for routing diagnostics.
+The default scene is now an RCT-style scenario launcher. A real **Corner Market** simulation is already running behind the menu. The launcher rotates through storefront demos while visible and lets the player switch among Corner Market, Electronics, Big Box, and Pharmacy. Selecting **RUN THIS STORE** leaves the selected authoritative scenario running as the playable prototype. Press Escape to reopen the scenario browser.
 
-### Next presentation milestone: attract mode + scenario browser
+`game/main_v3.gd` wraps the V2 renderer with scenario restarts and a small live-event feed. `game/main_v2.gd` remains the underlying current tycoon renderer, while `game/main.gd` remains the older debug-heavy reference implementation.
 
-Launching the finished prototype should feel closer to RollerCoaster Tycoon than a level editor: a real store should already be running behind a scenario browser, with the camera surfacing queues, shoppers, guard patrols and loss-prevention incidents. Choosing a prefab such as **Corner Market**, **Electronics / High Value**, **Big Box Saturday Rush**, **Pharmacy**, or **Troubled Store Turnaround** should restart the authoritative C simulation with that scenario's layout, assortment, staff, security, traffic and goals. The demo must use real simulation state rather than scripted fake incidents.
+The process bridge is intentionally temporary and can later be replaced by GDExtension without changing simulation ownership.
 
-### Visual direction prototype
+### Visual direction
 
-`game/main_v2.gd` is the current presentation experiment and is intentionally separate from the older debug-heavy `main.gd`. V2 moves toward classic tycoon/readable-management-game presentation: larger store framing, quieter floor grid, visually distinct zones, stronger walls/shadows, reduced fixture label clutter, compact metric chips, a dedicated inspector, and a bottom build palette.
+The current presentation uses a brighter tycoon palette, bounded pan/zoom, eight deterministic C-authored store shells, room tinting, full fixture footprints, distinct staff markers, site/parking context, an inspector, and a bottom build palette.
 
-This is presentation only. The C core remains the source of truth for world geometry, construction validation, customers, routing, staffing, security effects, inventory, and economics. Presentation-only zone names/colors in V2 are temporary until departments are authoritative snapshot data.
+C remains the source of truth for world geometry, construction validation, customers, routing, staffing, security effects, inventory, economics, and scenario setup. Presentation-only department colors/names are still temporary until departments become authoritative snapshot data.
 
-## Authoritative construction
+## Authoritative construction and staffing
 
 The C core owns store geometry and validates construction commands. Godot renders C geometry snapshots and sends commands over the temporary bidirectional process bridge. Stream commands include `PLACE`, `MOVE`, `ROTATE`, `REMOVE`, `WALL`, `UNWALL`, `HIRE`, and `FIRE`; rejected commands leave authoritative state unchanged.
