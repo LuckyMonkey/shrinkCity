@@ -38,3 +38,4 @@ target_compile_options(shrink-geometry-tests PRIVATE -Wall -Wextra -Wpedantic -W
 add_test(NAME shrink-geometry-tests COMMAND shrink-geometry-tests)
 
 add_test(NAME shrink-stream COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_stream.sh $<TARGET_FILE:shrink-sim>)
+add_test(NAME shrink-balance-strategies COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_balance.sh $<TARGET_FILE:shrink-balance>)
