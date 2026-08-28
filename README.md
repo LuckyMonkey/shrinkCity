@@ -1,6 +1,8 @@
 # Shrink City
 
-The current milestone is a headless C11 retail simulation: customers enter a small store, navigate to merchandise, purchase or steal, queue at two registers, pay, and exit. Metrics are reproducible from a seed. The current core also assigns deterministic customer archetypes/traits, employee wages, product costs, and measurable camera/security costs.
+Shrink City is a C11 + Godot retail loss-prevention tycoon prototype. Customers enter an authoritative C-authored store, navigate to merchandise, purchase or steal, queue, pay, and exit. The simulation is deterministic from its seed and now includes customer archetypes/traits, dynamic employee records, product economics, spatial camera/guard deterrence, construction, and measurable security/labor costs.
+
+The design target is not simply “catch shoplifters.” The player balances shrink against sales, customer friction, labor, throughput, inventory availability, and capital cost. See [GAMEPLAY.md](GAMEPLAY.md) for the scenario/attract-mode plan and the growing list of real retail systems.
 
 ## Build and run
 
@@ -19,7 +21,9 @@ cmake --build build-asan
 ctest --test-dir build-asan --output-on-failure
 ```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for ownership, determinism, and the planned Godot boundary. `data/` contains deliberately small external content examples; v0 uses equivalent validated constants while the schema is still settling. `shrink-balance` runs repeatable seed batches and emits CSV for tuning.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for ownership, determinism, and the planned Godot boundary. `data/` contains deliberately small external content examples while schemas settle.
+
+`shrink-balance` runs controlled, repeatable seed batches. It can compare authored stores against camera and staffing strategies (`authored`, `no_cameras`, `extra_cameras`, `no_guard`, `extra_guard`, and `lean_staff`) so balance changes can be tested instead of tuned only by feel.
 
 ## Godot prototype
 
@@ -27,12 +31,16 @@ Godot 4 is not required to build the C core. If Godot 4 is installed, open `game
 
 For alternate visual test runs, pass arguments after `--`: `godot --path game -- --seed=7 --ticks=120`. The C test suite also validates the snapshot stream with `ctest`. Geometry snapshots include fixture product assignments; entity snapshots include target fixture IDs and target interaction cells for routing diagnostics.
 
+### Next presentation milestone: attract mode + scenario browser
+
+Launching the finished prototype should feel closer to RollerCoaster Tycoon than a level editor: a real store should already be running behind a scenario browser, with the camera surfacing queues, shoppers, guard patrols and loss-prevention incidents. Choosing a prefab such as **Corner Market**, **Electronics / High Value**, **Big Box Saturday Rush**, **Pharmacy**, or **Troubled Store Turnaround** should restart the authoritative C simulation with that scenario's layout, assortment, staff, security, traffic and goals. The demo must use real simulation state rather than scripted fake incidents.
+
 ### Visual direction prototype
 
-`game/main_v2.gd` is the current presentation experiment and is intentionally separate from the older debug-heavy `main.gd`. The V2 pass moves the prototype toward a classic tycoon/readable-management-game presentation: larger store framing, quieter floor grid, visually distinct zones, stronger walls/shadows, reduced fixture label clutter, compact metric chips, a dedicated inspector, and a bottom build palette.
+`game/main_v2.gd` is the current presentation experiment and is intentionally separate from the older debug-heavy `main.gd`. V2 moves toward classic tycoon/readable-management-game presentation: larger store framing, quieter floor grid, visually distinct zones, stronger walls/shadows, reduced fixture label clutter, compact metric chips, a dedicated inspector, and a bottom build palette.
 
-This is presentation only. The C core remains the source of truth for world geometry, construction validation, customers, routing, inventory, and economics. Presentation-only zone names/colors in V2 are temporary until rooms and departments are authoritative snapshot data.
+This is presentation only. The C core remains the source of truth for world geometry, construction validation, customers, routing, staffing, security effects, inventory, and economics. Presentation-only zone names/colors in V2 are temporary until departments are authoritative snapshot data.
 
 ## Authoritative construction
 
-The C core owns the store geometry and validates construction commands. The Godot builder renders C geometry snapshots and sends commands over the temporary bidirectional process bridge. Stream commands include `PLACE`, `MOVE`, `ROTATE`, `REMOVE`, `WALL`, and `UNWALL`; rejected commands return a nonzero build status and leave the C world unchanged.
+The C core owns store geometry and validates construction commands. Godot renders C geometry snapshots and sends commands over the temporary bidirectional process bridge. Stream commands include `PLACE`, `MOVE`, `ROTATE`, `REMOVE`, `WALL`, `UNWALL`, `HIRE`, and `FIRE`; rejected commands leave authoritative state unchanged.
