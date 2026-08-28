@@ -61,8 +61,7 @@ func _build_ui() -> void:
     kicker.modulate = Color("#577078")
     column.add_child(kicker)
 
-    var sep := HSeparator.new()
-    column.add_child(sep)
+    column.add_child(HSeparator.new())
 
     var buttons := HBoxContainer.new()
     buttons.add_theme_constant_override("separation", 6)
@@ -72,7 +71,7 @@ func _build_ui() -> void:
         button.text = str(i + 1)
         button.custom_minimum_size = Vector2(62, 44)
         button.tooltip_text = SCENARIOS[i]["title"]
-        button.pressed.connect(func(index := i): _select_scenario(index, true))
+        button.pressed.connect(_select_scenario.bind(i, true))
         buttons.add_child(button)
         scenario_buttons.append(button)
 
@@ -119,7 +118,7 @@ func _build_ui() -> void:
     var demo := Button.new()
     demo.text = "KEEP WATCHING ATTRACT MODE"
     demo.custom_minimum_size = Vector2(350, 42)
-    demo.pressed.connect(func(): visible = false)
+    demo.pressed.connect(_hide_menu)
     column.add_child(demo)
 
     var footer := Label.new()
@@ -152,9 +151,12 @@ func _start_selected() -> void:
     var demo := _demo_node()
     if demo != null and demo.has_method("start_scenario"):
         demo.start_scenario(scenario["slug"])
-    visible = false
+    _hide_menu()
     if rotate_timer != null:
         rotate_timer.stop()
+
+func _hide_menu() -> void:
+    visible = false
 
 func _rotate_demo() -> void:
     if not visible:
