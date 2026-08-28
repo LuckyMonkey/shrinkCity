@@ -4,6 +4,8 @@ extends Node2D
 var sim_pipe: FileAccess
 var pending := ""
 var process_error := ""
+var command_feedback := ""
+var feedback_time := 0.0
 var entities: Dictionary = {}
 var fixtures: Array[Dictionary] = []
 var walls: Array[Dictionary] = []
@@ -34,6 +36,7 @@ const ORIGIN := Vector2(430.0, 24.0)
 const TILE_W := 40.0
 const TILE_H := 20.0
 const WORLD_PANEL_RIGHT := 1010.0
+const PRODUCT_SYMBOLS := ["SNACK", "DRINK", "GUM", "MEAL"]
 const BUILD_ORDER := ["shelf", "bin", "short_shelf", "locked_shelf", "clearance", "register", "self_checkout", "camera"]
 const BUILD_DEFS := {
     "shelf": {"name":"Gondola", "type":"shelf", "cost":80, "color":Color("#8b6547")},
@@ -62,7 +65,8 @@ func _ready() -> void:
         sim_pipe = result["stdio"]
     queue_redraw()
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+    if feedback_time > 0.0: feedback_time -= delta
     if sim_pipe != null:
         var available := sim_pipe.get_length()
         if available > 0:
@@ -105,7 +109,12 @@ func _consume_line(line: String) -> void:
             if f.size() >= 6:
                 entities[f[1]] = {"id":int(f[1]), "state":int(f[2]), "x":float(f[3]), "y":float(f[4]), "product":int(f[5]), "target_fixture_id":int(f[6]) if f.size() >= 7 else 0, "target_x":int(f[7]) if f.size() >= 8 else 0, "target_y":int(f[8]) if f.size() >= 9 else 0}
         "COMMAND":
-            if f.size() >= 2 and int(f[1]) != 0: process_error = "Build rejected (%s)" % f[1]
+            if f.size() >= 2:
+                var status := int(f[1])
+                var labels := {0:"Construction accepted", 1:"Outside store bounds", 2:"Overlaps another fixture", 3:"Would block a required route", 4:"Invalid entrance / exit", 5:"Invalid wall", 6:"Entity not found"}
+                command_feedback = labels.get(status, "Construction rejected (%d)" % status)
+                feedback_time = 3.0
+                if status != 0: process_error = command_feedback
 
 func _kind_from_type(type_id: int) -> String:
     var kinds := ["", "shelf", "shelf_bin", "short_shelf", "locked_shelf", "clearance", "register", "self_checkout", "camera", "entrance", "exit", "rfid_station", "locked_case"]
@@ -202,6 +211,7 @@ func _draw_floor() -> void:
             draw_colored_polygon(_diamond(c), _floor_color(x,y))
             # Suppress most grid noise; only subtle seams remain.
             draw_polyline(PackedVector2Array([c+Vector2(0,-10),c+Vector2(20,0),c+Vector2(0,10),c+Vector2(-20,0),c+Vector2(0,-10)]), Color(0.25,0.22,0.18,0.10), 0.55)
+            if x >= 3 and x <= 18 and y % 4 == 0: draw_line(c + Vector2(-8, 0), c + Vector2(8, 0), Color(0.72,0.64,0.48,0.18), 1.2)
 
 func _room_color(room_type: int) -> Color:
     var colors := {1:Color("#d4b06b"), 2:Color("#8fa69a"), 3:Color("#807b76"), 4:Color("#8a7468"), 5:Color("#756b83"), 6:Color("#6c9aa5")}
@@ -219,6 +229,9 @@ func _draw_rooms() -> void:
                 if _inside(x, y): draw_colored_polygon(_diamond(_iso(Vector2(x, y)), 2.0), Color(tint, 0.09))
         var label_pos := _iso(Vector2(room.x + room.width * 0.5, room.y + room.height * 0.5))
         draw_string(ThemeDB.fallback_font, label_pos, _room_name(int(room.type)), HORIZONTAL_ALIGNMENT_CENTER, 110, 10, Color(tint, 0.62))
+        var tl := _iso(Vector2(room.x, room.y)); var tr := _iso(Vector2(room.x + room.width, room.y))
+        var br := _iso(Vector2(room.x + room.width, room.y + room.height)); var bl := _iso(Vector2(room.x, room.y + room.height))
+        draw_polyline(PackedVector2Array([tl, tr, br, bl, tl]), Color(tint, 0.34), 2.0)
 
 func _draw_building_edges() -> void:
     for y in range(geometry_height):
@@ -269,6 +282,10 @@ func _draw_fixture(f: Dictionary, alpha: float) -> void:
             for ox in range(width):
                 var cell := _iso(Vector2(int(f.x) + ox, int(f.y) + oy))
                 var color := Color("#bb4f4f") if bool(f.get("preview_invalid", false)) else _fixture_color(kind)
+                var product := int(f.get("product", -1))
+                if product == 0: color = color.lerp(Color("#6f9c62"), 0.28)
+                elif product == 1: color = color.lerp(Color("#5f88a9"), 0.22)
+                elif product == 2: color = color.lerp(Color("#b37955"), 0.18)
                 color.a = alpha
                 draw_colored_polygon(_diamond(cell), Color(color.darkened(0.42), 0.42 * alpha))
                 draw_rect(Rect2(cell.x - 13, cell.y - 25, 26, 21), color)
@@ -366,6 +383,8 @@ func _draw_hud() -> void:
         draw_multiline_string(ThemeDB.fallback_font,Vector2(1038,316),"Select a shopper or fixture.\n\nDrag to pan • wheel to zoom\nB toggles build mode\n1–8 picks fixture",HORIZONTAL_ALIGNMENT_LEFT,200,13,21,Color("#91a6b0"))
     else:
         var txt := "%s\nID %s\nTile %s, %s" % [selected.get("kind","Shopper").capitalize(),selected.get("id","—"),selected.get("x","—"),selected.get("y","—")]
+        if selected.has("product") and int(selected.get("product", -1)) >= 0: txt += "\nProduct: %s" % [PRODUCT_SYMBOLS[int(selected.product)]]
+        if selected.has("width"): txt += "\nFootprint: %sx%s" % [selected.width, selected.height]
         if selected.has("target_fixture_id"): txt += "\nTarget fixture %s\nAccess cell %s, %s" % [selected.target_fixture_id, selected.target_x, selected.target_y]
         draw_multiline_string(ThemeDB.fallback_font,Vector2(1038,316),txt,HORIZONTAL_ALIGNMENT_LEFT,200,14,23,Color("#dfd4c3"))
 
@@ -381,7 +400,8 @@ func _draw_hud() -> void:
         draw_rect(Rect2(r.position,Vector2(5,r.size.y)),d.color)
         draw_string(ThemeDB.fallback_font,r.position+Vector2(12,18),"%d  %s" % [i+1,d.name],HORIZONTAL_ALIGNMENT_LEFT,82,11,Color("#eee5d4"))
         draw_string(ThemeDB.fallback_font,r.position+Vector2(12,36),"$%d" % d.cost,HORIZONTAL_ALIGNMENT_LEFT,82,10,Color("#a9bac1"))
-    if process_error != "": draw_string(ThemeDB.fallback_font,Vector2(1038,600),process_error,HORIZONTAL_ALIGNMENT_LEFT,205,12,Color("#e57e76"))
+    if feedback_time > 0.0: draw_string(ThemeDB.fallback_font,Vector2(1038,600),command_feedback,HORIZONTAL_ALIGNMENT_LEFT,205,12,Color("#8bd19a") if command_feedback == "Construction accepted" else Color("#e57e76"))
+    elif process_error != "": draw_string(ThemeDB.fallback_font,Vector2(1038,600),process_error,HORIZONTAL_ALIGNMENT_LEFT,205,12,Color("#e57e76"))
 
 func _metric_chip(pos: Vector2, label: String, value: String, accent: Color) -> void:
     draw_rect(Rect2(pos,Vector2(116,34)),Color("#1e2d35"))
@@ -446,6 +466,7 @@ func _input(event: InputEvent) -> void:
             build_kind = BUILD_ORDER[idx]; build_mode = true
         elif event.keycode == KEY_R:
             view_offset = Vector2(45, 70); zoom = 1.0
+            command_feedback = ""; process_error = ""
         queue_redraw()
 
 func _fixture_at_tile(tile: Vector2) -> Dictionary:
