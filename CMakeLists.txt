@@ -7,7 +7,7 @@ set(CMAKE_C_EXTENSIONS OFF)
 
 option(SHRINK_ENABLE_SANITIZERS "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
 
-add_library(shrink_sim STATIC sim/world.c sim/pathfinding.c sim/geometry.c)
+add_library(shrink_sim STATIC sim/world.c sim/pathfinding.c sim/geometry.c sim/scenario.c)
 target_include_directories(shrink_sim PUBLIC sim/include)
 target_link_libraries(shrink_sim PUBLIC m)
 target_compile_options(shrink_sim PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
@@ -42,5 +42,11 @@ target_link_libraries(shrink-staffing-tests PRIVATE shrink_sim)
 target_compile_options(shrink-staffing-tests PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
 add_test(NAME shrink-staffing-tests COMMAND shrink-staffing-tests)
 
+add_executable(shrink-scenario-tests tests/test_scenarios.c)
+target_link_libraries(shrink-scenario-tests PRIVATE shrink_sim)
+target_compile_options(shrink-scenario-tests PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+add_test(NAME shrink-scenario-tests COMMAND shrink-scenario-tests)
+
 add_test(NAME shrink-stream COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_stream.sh $<TARGET_FILE:shrink-sim>)
 add_test(NAME shrink-balance-strategies COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_balance.sh $<TARGET_FILE:shrink-balance>)
+add_test(NAME shrink-scenario-cli COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_scenarios.sh $<TARGET_FILE:shrink-sim>)
