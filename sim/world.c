@@ -12,19 +12,21 @@
 #define REGISTER_COUNT 2U
 #define PRODUCT_COUNT 4U
 #define OPEN_SECONDS_PER_DAY 600.0
-#define SPAWN_INTERVAL 6.0
-#define EMPLOYEE_COUNT 4U
+#define MAX_EMPLOYEES 16U
+#define GUARD_STEP_TICKS 2U
 
 typedef struct ShrinkBalanceConfig {
     double spawn_interval;
-    double base_theft_rate;
     double camera_deterrence;
     double guard_deterrence;
     double camera_maintenance_per_second;
     double checkout_seconds;
+    double self_checkout_seconds;
+    int camera_range;
+    int guard_range;
 } ShrinkBalanceConfig;
 
-static const ShrinkBalanceConfig BALANCE = {6.0, 0.16, 0.08, 0.12, 0.006, 20.0};
+static const ShrinkBalanceConfig BALANCE = {6.0, 0.11, 0.18, 0.006, 20.0, 15.0, 8, 6};
 
 typedef enum CustomerState {
     CUSTOMER_UNUSED,
@@ -35,7 +37,14 @@ typedef enum CustomerState {
     CUSTOMER_LEAVING
 } CustomerState;
 
-typedef struct Product { double cost; double price; double demand; double theft_risk; unsigned stock; } Product;
+typedef struct Product {
+    double cost;
+    double price;
+    double demand;
+    double theft_risk;
+    unsigned stock;
+} Product;
+
 typedef struct Customer {
     CustomerState state;
     ShrinkCustomerArchetype archetype;
@@ -61,6 +70,8 @@ typedef struct Employee {
     double fatigue;
     double morale;
     int x, y;
+    uint64_t target_fixture_id;
+    int target_x, target_y;
 } Employee;
 
 struct ShrinkWorld {
@@ -79,12 +90,13 @@ struct ShrinkWorld {
     double satisfaction_sum;
     double checkout_wait_sum;
     uint64_t satisfaction_count;
-    Employee employees[EMPLOYEE_COUNT];
+    Employee employees[MAX_EMPLOYEES];
+    size_t employee_count;
+    uint64_t next_employee_id;
 };
 
 static uint64_t rng_next(ShrinkWorld *world)
 {
-    /* PCG-style xorshift is small, fast, and entirely owned by the world. */
     uint64_t x = world->seed;
     x ^= x >> 12;
     x ^= x << 25;
@@ -101,6 +113,11 @@ static double random_unit(ShrinkWorld *world)
 static double distance_to(double x, double y, double target_x, double target_y)
 {
     return hypot(target_x - x, target_y - y);
+}
+
+static int manhattan(int ax, int ay, int bx, int by)
+{
+    return abs(ax - bx) + abs(ay - by);
 }
 
 static void move_toward(Customer *customer, double dt, const unsigned char *blocked, int width, int height)
@@ -149,6 +166,97 @@ static const ShrinkFixture *first_fixture_of_type(const ShrinkWorld *world, Shri
     for (size_t i = 0U; i < world->geometry.fixture_count; ++i)
         if (world->geometry.fixtures[i].type == type) return &world->geometry.fixtures[i];
     return NULL;
+}
+
+static unsigned fixture_count_of_type(const ShrinkWorld *world, ShrinkFixtureType type)
+{
+    unsigned count = 0U;
+    for (size_t i = 0U; i < world->geometry.fixture_count; ++i)
+        count += world->geometry.fixtures[i].type == type;
+    return count;
+}
+
+static unsigned employee_count_of_role(const ShrinkWorld *world, ShrinkEmployeeRole role)
+{
+    unsigned count = 0U;
+    for (size_t i = 0U; i < world->employee_count; ++i)
+        count += world->employees[i].role == role;
+    return count;
+}
+
+static double default_wage(ShrinkEmployeeRole role)
+{
+    switch (role) {
+        case SHRINK_EMPLOYEE_CASHIER: return 18.0;
+        case SHRINK_EMPLOYEE_ASSOCIATE: return 17.0;
+        case SHRINK_EMPLOYEE_STOCKER: return 18.5;
+        case SHRINK_EMPLOYEE_SECURITY: return 22.0;
+        default: return 0.0;
+    }
+}
+
+static int valid_employee_role(ShrinkEmployeeRole role)
+{
+    return role >= SHRINK_EMPLOYEE_CASHIER && role <= SHRINK_EMPLOYEE_SECURITY;
+}
+
+static const ShrinkFixture *next_camera_fixture(const ShrinkWorld *world, uint64_t current_id)
+{
+    const ShrinkFixture *first = NULL;
+    const ShrinkFixture *next = NULL;
+    for (size_t i = 0U; i < world->geometry.fixture_count; ++i) {
+        const ShrinkFixture *fixture = &world->geometry.fixtures[i];
+        if (fixture->type != SHRINK_FIXTURE_CAMERA) continue;
+        if (first == NULL || fixture->id < first->id) first = fixture;
+        if (fixture->id > current_id && (next == NULL || fixture->id < next->id)) next = fixture;
+    }
+    return next != NULL ? next : first;
+}
+
+static void set_employee_target(Employee *employee, const ShrinkFixture *fixture)
+{
+    if (fixture == NULL) {
+        employee->target_fixture_id = 0U;
+        employee->target_x = employee->x;
+        employee->target_y = employee->y;
+        return;
+    }
+    employee->target_fixture_id = fixture->id;
+    employee->target_x = fixture->x;
+    employee->target_y = fixture->y;
+}
+
+static ShrinkStaffResult hire_employee_internal(ShrinkWorld *world, ShrinkEmployeeRole role, double wage, uint64_t *out_id)
+{
+    if (world == NULL || !valid_employee_role(role)) return SHRINK_STAFF_INVALID_ROLE;
+    if (world->employee_count >= MAX_EMPLOYEES) return SHRINK_STAFF_FULL;
+
+    const uint64_t id = ++world->next_employee_id;
+    Employee employee;
+    memset(&employee, 0, sizeof(employee));
+    employee.id = id;
+    employee.role = role;
+    employee.wage = wage > 0.0 ? wage : default_wage(role);
+    employee.skill = 0.72 + 0.035 * (double)((id * 7U + (uint64_t)role * 3U) % 7U);
+    employee.morale = 0.88 + 0.02 * (double)(id % 5U);
+
+    const ShrinkFixture *spawn = NULL;
+    if (role == SHRINK_EMPLOYEE_CASHIER) spawn = first_fixture_of_type(world, SHRINK_FIXTURE_REGISTER);
+    else if (role == SHRINK_EMPLOYEE_SECURITY) spawn = first_fixture_of_type(world, SHRINK_FIXTURE_CAMERA);
+    if (spawn == NULL) spawn = first_fixture_of_type(world, SHRINK_FIXTURE_ENTRANCE);
+    if (spawn != NULL) {
+        employee.x = spawn->x;
+        employee.y = spawn->y;
+    }
+
+    if (role == SHRINK_EMPLOYEE_SECURITY)
+        set_employee_target(&employee, next_camera_fixture(world, 0U));
+    else
+        set_employee_target(&employee, spawn);
+
+    world->employees[world->employee_count++] = employee;
+    if (out_id != NULL) *out_id = id;
+    return SHRINK_STAFF_OK;
 }
 
 static const ShrinkFixture *fixture_for_product(const ShrinkWorld *world, unsigned product, int from_x, int from_y)
@@ -218,15 +326,21 @@ static void spawn_customer(ShrinkWorld *world)
             const ShrinkFixture *entrance = first_fixture_of_type(world, SHRINK_FIXTURE_ENTRANCE);
             if (entrance == NULL) return;
             customer->state = CUSTOMER_TO_PRODUCT;
-            customer->x = (double)entrance->x; customer->y = (double)entrance->y;
+            customer->x = (double)entrance->x;
+            customer->y = (double)entrance->y;
             customer->archetype = (ShrinkCustomerArchetype)(SHRINK_CUSTOMER_QUICK_STOP + (rng_next(world) % 5U));
             customer->walking_speed = 2.3 + random_unit(world) * 1.8;
             customer->patience_seconds = 35.0 + random_unit(world) * 90.0;
             customer->budget = 5.0 + random_unit(world) * 25.0;
             customer->theft_tendency = 0.05 + random_unit(world) * 0.38;
-            if (customer->archetype == SHRINK_CUSTOMER_QUICK_STOP) { customer->walking_speed += 0.7; customer->patience_seconds -= 10.0; }
-            else if (customer->archetype == SHRINK_CUSTOMER_BARGAIN) customer->budget += 8.0;
-            else if (customer->archetype == SHRINK_CUSTOMER_OPPORTUNISTIC) customer->theft_tendency += 0.25;
+            if (customer->archetype == SHRINK_CUSTOMER_QUICK_STOP) {
+                customer->walking_speed += 0.7;
+                customer->patience_seconds -= 10.0;
+            } else if (customer->archetype == SHRINK_CUSTOMER_BARGAIN) {
+                customer->budget += 8.0;
+            } else if (customer->archetype == SHRINK_CUSTOMER_OPPORTUNISTIC) {
+                customer->theft_tendency += 0.25;
+            }
             customer->target_fixture_id = entrance->id;
             customer->wait_seconds = 0.0;
             customer->satisfaction = 100.0;
@@ -244,6 +358,31 @@ static void spawn_customer(ShrinkWorld *world)
     }
 }
 
+static double local_security_deterrence(const ShrinkWorld *world, int x, int y)
+{
+    double deterrence = 0.0;
+    for (size_t i = 0U; i < world->geometry.fixture_count; ++i) {
+        const ShrinkFixture *fixture = &world->geometry.fixtures[i];
+        if (fixture->type != SHRINK_FIXTURE_CAMERA) continue;
+        const int distance = manhattan(x, y, fixture->x, fixture->y);
+        if (distance <= BALANCE.camera_range) {
+            const double proximity = 1.0 - (double)distance / (double)(BALANCE.camera_range + 1);
+            deterrence += BALANCE.camera_deterrence * proximity;
+        }
+    }
+    for (size_t i = 0U; i < world->employee_count; ++i) {
+        const Employee *employee = &world->employees[i];
+        if (employee->role != SHRINK_EMPLOYEE_SECURITY) continue;
+        const int distance = manhattan(x, y, employee->x, employee->y);
+        if (distance <= BALANCE.guard_range) {
+            const double proximity = 1.0 - (double)distance / (double)(BALANCE.guard_range + 1);
+            const double fatigue_factor = 1.0 - 0.35 * employee->fatigue;
+            deterrence += BALANCE.guard_deterrence * employee->skill * employee->morale * fatigue_factor * proximity;
+        }
+    }
+    return fmin(0.85, deterrence);
+}
+
 static void decide_purchase(ShrinkWorld *world, Customer *customer)
 {
     Product *product = &world->products[customer->product];
@@ -254,12 +393,7 @@ static void decide_purchase(ShrinkWorld *world, Customer *customer)
         return;
     }
     product->stock--;
-    /* Two cameras cover the merchandise aisles; their combined effect is deterministic. */
-    unsigned cameras = 0U;
-    for (size_t i = 0U; i < world->geometry.fixture_count; ++i) cameras += world->geometry.fixtures[i].type == SHRINK_FIXTURE_CAMERA;
-    unsigned guards = 0U;
-    for (size_t i = 0U; i < EMPLOYEE_COUNT; ++i) guards += world->employees[i].role == SHRINK_EMPLOYEE_SECURITY;
-    const double deterrence = fmin(0.85, cameras * BALANCE.camera_deterrence + guards * BALANCE.guard_deterrence);
+    const double deterrence = local_security_deterrence(world, (int)lround(customer->x), (int)lround(customer->y));
     const double theft_probability = product->theft_risk * (1.0 - deterrence) * (0.65 + customer->theft_tendency);
     if (random_unit(world) < theft_probability) {
         world->metrics.thefts++;
@@ -273,9 +407,37 @@ static void decide_purchase(ShrinkWorld *world, Customer *customer)
     }
 }
 
+static unsigned open_checkout_lanes(const ShrinkWorld *world, unsigned *out_staffed_lanes)
+{
+    unsigned staffed = employee_count_of_role(world, SHRINK_EMPLOYEE_CASHIER);
+    const unsigned registers = fixture_count_of_type(world, SHRINK_FIXTURE_REGISTER);
+    const unsigned self_checkouts = fixture_count_of_type(world, SHRINK_FIXTURE_SELF_CHECKOUT);
+    if (staffed > registers) staffed = registers;
+    if (staffed > REGISTER_COUNT) staffed = REGISTER_COUNT;
+    unsigned self_lanes = self_checkouts;
+    if (self_lanes > REGISTER_COUNT - staffed) self_lanes = REGISTER_COUNT - staffed;
+    if (out_staffed_lanes != NULL) *out_staffed_lanes = staffed;
+    return staffed + self_lanes;
+}
+
+static double average_cashier_skill(const ShrinkWorld *world)
+{
+    double total = 0.0;
+    unsigned count = 0U;
+    for (size_t i = 0U; i < world->employee_count; ++i) {
+        if (world->employees[i].role != SHRINK_EMPLOYEE_CASHIER) continue;
+        total += world->employees[i].skill;
+        ++count;
+    }
+    return count == 0U ? 0.75 : total / (double)count;
+}
+
 static void assign_queues(ShrinkWorld *world)
 {
-    for (unsigned r = 0; r < REGISTER_COUNT; ++r) {
+    unsigned staffed_lanes = 0U;
+    const unsigned open_lanes = open_checkout_lanes(world, &staffed_lanes);
+    const double cashier_speed = 0.65 + 0.60 * average_cashier_skill(world);
+    for (unsigned r = 0; r < open_lanes; ++r) {
         if (world->register_customer[r] != 0U) continue;
         for (size_t i = 0; i < MAX_CUSTOMERS; ++i) {
             Customer *customer = &world->customers[i];
@@ -283,7 +445,7 @@ static void assign_queues(ShrinkWorld *world)
                 customer->state = CUSTOMER_CHECKOUT;
                 customer->register_id = r;
                 world->register_customer[r] = customer->id;
-                world->register_timer[r] = BALANCE.checkout_seconds;
+                world->register_timer[r] = r < staffed_lanes ? BALANCE.checkout_seconds / cashier_speed : BALANCE.self_checkout_seconds;
                 break;
             }
         }
@@ -312,46 +474,91 @@ static void update_registers(ShrinkWorld *world, double dt)
     }
 }
 
+static void update_security_staff(ShrinkWorld *world, const unsigned char *blocked)
+{
+    if (world->ticks % GUARD_STEP_TICKS != 0U) return;
+    for (size_t i = 0U; i < world->employee_count; ++i) {
+        Employee *employee = &world->employees[i];
+        if (employee->role != SHRINK_EMPLOYEE_SECURITY) continue;
+
+        const ShrinkFixture *target = shrink_geometry_find_fixture(&world->geometry, employee->target_fixture_id);
+        if (target == NULL || target->type != SHRINK_FIXTURE_CAMERA) {
+            target = next_camera_fixture(world, 0U);
+            if (target == NULL) target = first_fixture_of_type(world, SHRINK_FIXTURE_ENTRANCE);
+            set_employee_target(employee, target);
+        }
+
+        if (employee->x == employee->target_x && employee->y == employee->target_y) {
+            const ShrinkFixture *next = next_camera_fixture(world, employee->target_fixture_id);
+            if (next != NULL && next->id != employee->target_fixture_id) set_employee_target(employee, next);
+        }
+
+        int next_x = employee->x;
+        int next_y = employee->y;
+        if (shrink_path_next_step_grid(employee->x, employee->y, employee->target_x, employee->target_y,
+                                       blocked, world->geometry.width, world->geometry.height, &next_x, &next_y)) {
+            employee->x = next_x;
+            employee->y = next_y;
+        }
+    }
+}
+
 ShrinkWorld *shrink_create(uint64_t seed)
 {
     ShrinkWorld *world = calloc(1, sizeof(*world));
     if (world == NULL) return NULL;
     world->seed = seed == 0U ? UINT64_C(88172645463393265) : seed;
     shrink_geometry_init_layout(&world->geometry, (unsigned)(world->seed % 8U));
-    const double prices[PRODUCT_COUNT] = { 2.49, 3.99, 1.79, 5.49 };
-    const double costs[PRODUCT_COUNT] = { 1.05, 1.55, 0.62, 2.20 };
-    const double risks[PRODUCT_COUNT] = { 0.16, 0.11, 0.13, 0.27 };
+
+    const double prices[PRODUCT_COUNT] = {2.49, 3.99, 1.79, 5.49};
+    const double costs[PRODUCT_COUNT] = {1.05, 1.55, 0.62, 2.20};
+    const double risks[PRODUCT_COUNT] = {0.16, 0.11, 0.13, 0.27};
     for (size_t i = 0; i < PRODUCT_COUNT; ++i) {
-        world->products[i].cost = costs[i]; world->products[i].price = prices[i];
-        world->products[i].demand = 1.0; world->products[i].theft_risk = risks[i]; world->products[i].stock = 100U;
+        world->products[i].cost = costs[i];
+        world->products[i].price = prices[i];
+        world->products[i].demand = 1.0;
+        world->products[i].theft_risk = risks[i];
+        world->products[i].stock = 100U;
     }
-    const ShrinkEmployeeRole roles[EMPLOYEE_COUNT] = {SHRINK_EMPLOYEE_CASHIER, SHRINK_EMPLOYEE_CASHIER, SHRINK_EMPLOYEE_ASSOCIATE, SHRINK_EMPLOYEE_SECURITY};
-    const double wages[EMPLOYEE_COUNT] = {18.0, 18.0, 17.0, 22.0};
-    for (size_t i = 0U; i < EMPLOYEE_COUNT; ++i) world->employees[i] = (Employee){i + 1U, roles[i], wages[i], 0.75 + 0.05 * (double)i, 0.0, 1.0, 14 + (int)i, 8};
+
+    (void)hire_employee_internal(world, SHRINK_EMPLOYEE_CASHIER, 18.0, NULL);
+    (void)hire_employee_internal(world, SHRINK_EMPLOYEE_CASHIER, 18.0, NULL);
+    (void)hire_employee_internal(world, SHRINK_EMPLOYEE_ASSOCIATE, 17.0, NULL);
+    (void)hire_employee_internal(world, SHRINK_EMPLOYEE_SECURITY, 22.0, NULL);
     return world;
 }
 
-void shrink_destroy(ShrinkWorld *world) { free(world); }
+void shrink_destroy(ShrinkWorld *world)
+{
+    free(world);
+}
 
 void shrink_tick(ShrinkWorld *world, double dt_seconds)
 {
     if (world == NULL || !(dt_seconds > 0.0) || !isfinite(dt_seconds)) return;
     world->ticks++;
     world->time += dt_seconds;
-    for (size_t i = 0U; i < EMPLOYEE_COUNT; ++i) {
-        world->employees[i].fatigue = fmin(1.0, world->employees[i].fatigue + dt_seconds / 36000.0);
-        world->metrics.labor_cost += world->employees[i].wage / 3600.0 * dt_seconds;
+
+    for (size_t i = 0U; i < world->employee_count; ++i) {
+        Employee *employee = &world->employees[i];
+        employee->fatigue = fmin(1.0, employee->fatigue + dt_seconds / 36000.0);
+        employee->morale = fmax(0.55, employee->morale - dt_seconds / 180000.0);
+        world->metrics.labor_cost += employee->wage / 3600.0 * dt_seconds;
     }
-    unsigned camera_count = 0U;
-    for (size_t i = 0U; i < world->geometry.fixture_count; ++i) camera_count += world->geometry.fixtures[i].type == SHRINK_FIXTURE_CAMERA;
+
+    const unsigned camera_count = fixture_count_of_type(world, SHRINK_FIXTURE_CAMERA);
     world->metrics.security_cost += camera_count * BALANCE.camera_maintenance_per_second * dt_seconds;
     world->spawn_timer -= dt_seconds;
+
     unsigned char blocked[SHRINK_MAX_CELLS];
     shrink_geometry_blocked_map(&world->geometry, blocked);
+    update_security_staff(world, blocked);
+
     if (world->time < OPEN_SECONDS_PER_DAY && world->spawn_timer <= 0.0) {
         spawn_customer(world);
-        world->spawn_timer += SPAWN_INTERVAL;
+        world->spawn_timer += BALANCE.spawn_interval;
     }
+
     for (size_t i = 0; i < MAX_CUSTOMERS; ++i) {
         Customer *customer = &world->customers[i];
         if (customer->state == CUSTOMER_UNUSED) continue;
@@ -372,25 +579,30 @@ void shrink_tick(ShrinkWorld *world, double dt_seconds)
             customer->wait_seconds += dt_seconds;
             customer->patience_seconds -= dt_seconds;
             customer->satisfaction -= 0.025 * dt_seconds;
-            if (customer->patience_seconds <= 0.0) { world->metrics.abandoned++; begin_leaving(world, customer); }
+            if (customer->patience_seconds <= 0.0) {
+                world->metrics.abandoned++;
+                begin_leaving(world, customer);
+            }
         } else if (customer->state == CUSTOMER_LEAVING && reached_target(customer)) {
             world->satisfaction_sum += fmax(0.0, customer->satisfaction);
             world->satisfaction_count++;
             finish_customer(world, customer);
         }
     }
+
     update_registers(world, dt_seconds);
     assign_queues(world);
     world->metrics.labor_cost = round(world->metrics.labor_cost * 100.0) / 100.0;
     world->metrics.profit = world->metrics.revenue - world->metrics.cost_of_goods - world->metrics.stolen_value - world->metrics.labor_cost - world->metrics.security_cost;
-    world->metrics.average_checkout_wait = world->metrics.purchases == 0U ? 0.0 :
-        world->checkout_wait_sum / (double)world->metrics.purchases;
-    world->metrics.average_satisfaction = world->satisfaction_count == 0U ? 100.0 :
-        world->satisfaction_sum / (double)world->satisfaction_count;
-    world->metrics.active_employees = EMPLOYEE_COUNT;
+    world->metrics.average_checkout_wait = world->metrics.purchases == 0U ? 0.0 : world->checkout_wait_sum / (double)world->metrics.purchases;
+    world->metrics.average_satisfaction = world->satisfaction_count == 0U ? 100.0 : world->satisfaction_sum / (double)world->satisfaction_count;
+    world->metrics.active_employees = (uint64_t)world->employee_count;
 }
 
-uint64_t shrink_tick_count(const ShrinkWorld *world) { return world == NULL ? 0U : world->ticks; }
+uint64_t shrink_tick_count(const ShrinkWorld *world)
+{
+    return world == NULL ? 0U : world->ticks;
+}
 
 size_t shrink_entity_count(const ShrinkWorld *world)
 {
@@ -405,7 +617,9 @@ int shrink_entity_snapshot(const ShrinkWorld *world, size_t index, ShrinkEntityS
         const Customer *customer = &world->customers[i];
         if (customer->state == CUSTOMER_UNUSED) continue;
         if (active_index++ != index) continue;
-        out_snapshot->id = customer->id; out_snapshot->x = customer->x; out_snapshot->y = customer->y;
+        out_snapshot->id = customer->id;
+        out_snapshot->x = customer->x;
+        out_snapshot->y = customer->y;
         out_snapshot->product = customer->product;
         out_snapshot->state = customer->state == CUSTOMER_TO_PRODUCT ? SHRINK_ENTITY_TO_PRODUCT :
             customer->state == CUSTOMER_WAITING ? SHRINK_ENTITY_WAITING :
@@ -436,14 +650,37 @@ int shrink_room_snapshot(const ShrinkWorld *world, size_t index, ShrinkRoomSnaps
     return 1;
 }
 
-size_t shrink_employee_count(const ShrinkWorld *world) { return world == NULL ? 0U : EMPLOYEE_COUNT; }
+size_t shrink_employee_count(const ShrinkWorld *world)
+{
+    return world == NULL ? 0U : world->employee_count;
+}
 
 int shrink_employee_snapshot(const ShrinkWorld *world, size_t index, ShrinkEmployeeSnapshot *out_snapshot)
 {
-    if (world == NULL || out_snapshot == NULL || index >= EMPLOYEE_COUNT) return 0;
+    if (world == NULL || out_snapshot == NULL || index >= world->employee_count) return 0;
     const Employee *employee = &world->employees[index];
-    *out_snapshot = (ShrinkEmployeeSnapshot){employee->id, employee->role, employee->wage, employee->skill, employee->fatigue, employee->morale, employee->x, employee->y};
+    *out_snapshot = (ShrinkEmployeeSnapshot){employee->id, employee->role, employee->wage, employee->skill,
+                                             employee->fatigue, employee->morale, employee->x, employee->y,
+                                             employee->target_fixture_id, employee->target_x, employee->target_y};
     return 1;
+}
+
+ShrinkStaffResult shrink_hire_employee(ShrinkWorld *world, ShrinkEmployeeRole role, double wage, uint64_t *out_id)
+{
+    return hire_employee_internal(world, role, wage, out_id);
+}
+
+ShrinkStaffResult shrink_fire_employee(ShrinkWorld *world, uint64_t id)
+{
+    if (world == NULL) return SHRINK_STAFF_NOT_FOUND;
+    for (size_t i = 0U; i < world->employee_count; ++i) {
+        if (world->employees[i].id != id) continue;
+        memmove(&world->employees[i], &world->employees[i + 1U],
+                (world->employee_count - i - 1U) * sizeof(world->employees[0]));
+        --world->employee_count;
+        return SHRINK_STAFF_OK;
+    }
+    return SHRINK_STAFF_NOT_FOUND;
 }
 
 uint32_t shrink_floor_row(const ShrinkWorld *world, int y)
@@ -458,9 +695,12 @@ uint32_t shrink_floor_row(const ShrinkWorld *world, int y)
 void shrink_geometry_info(const ShrinkWorld *world, ShrinkGeometryInfo *out_info)
 {
     if (world == NULL || out_info == NULL) return;
-    out_info->width = world->geometry.width; out_info->height = world->geometry.height;
-    out_info->wall_count = world->geometry.wall_count; out_info->fixture_count = world->geometry.fixture_count;
-    out_info->room_count = world->geometry.room_count; out_info->layout_id = world->geometry.layout_id;
+    out_info->width = world->geometry.width;
+    out_info->height = world->geometry.height;
+    out_info->wall_count = world->geometry.wall_count;
+    out_info->fixture_count = world->geometry.fixture_count;
+    out_info->room_count = world->geometry.room_count;
+    out_info->layout_id = world->geometry.layout_id;
 }
 
 int shrink_wall_snapshot(const ShrinkWorld *world, size_t index, ShrinkWallSnapshot *out_snapshot)
@@ -475,14 +715,42 @@ int shrink_fixture_snapshot(const ShrinkWorld *world, size_t index, ShrinkFixtur
 {
     if (world == NULL || out_snapshot == NULL || index >= world->geometry.fixture_count) return 0;
     const ShrinkFixture *fixture = &world->geometry.fixtures[index];
-    *out_snapshot = (ShrinkFixtureSnapshot){fixture->id, fixture->type, fixture->x, fixture->y, fixture->rotation, fixture->width, fixture->height, fixture->access_mask, fixture->product_id};
+    *out_snapshot = (ShrinkFixtureSnapshot){fixture->id, fixture->type, fixture->x, fixture->y, fixture->rotation,
+                                            fixture->width, fixture->height, fixture->access_mask, fixture->product_id};
     return 1;
 }
 
-ShrinkBuildResult shrink_try_place_fixture(ShrinkWorld *world, ShrinkFixtureType type, int x, int y, unsigned rotation, uint64_t *out_id) { return world == NULL ? SHRINK_BUILD_NOT_FOUND : shrink_geometry_place_fixture(&world->geometry, type, x, y, rotation, out_id); }
-ShrinkBuildResult shrink_try_move_fixture(ShrinkWorld *world, uint64_t id, int x, int y) { return world == NULL ? SHRINK_BUILD_NOT_FOUND : shrink_geometry_move_fixture(&world->geometry, id, x, y); }
-ShrinkBuildResult shrink_try_rotate_fixture(ShrinkWorld *world, uint64_t id, unsigned rotation) { return world == NULL ? SHRINK_BUILD_NOT_FOUND : shrink_geometry_rotate_fixture(&world->geometry, id, rotation); }
-ShrinkBuildResult shrink_try_remove_fixture(ShrinkWorld *world, uint64_t id) { return world == NULL ? SHRINK_BUILD_NOT_FOUND : shrink_geometry_remove_fixture(&world->geometry, id); }
-ShrinkBuildResult shrink_try_add_wall(ShrinkWorld *world, int ax, int ay, int bx, int by, uint64_t *out_id) { return world == NULL ? SHRINK_BUILD_NOT_FOUND : shrink_geometry_add_wall(&world->geometry, ax, ay, bx, by, out_id); }
-ShrinkBuildResult shrink_try_remove_wall(ShrinkWorld *world, uint64_t id) { return world == NULL ? SHRINK_BUILD_NOT_FOUND : shrink_geometry_remove_wall(&world->geometry, id); }
-int shrink_geometry_has_routes(const ShrinkWorld *world) { return world != NULL && shrink_geometry_routes_valid(&world->geometry); }
+ShrinkBuildResult shrink_try_place_fixture(ShrinkWorld *world, ShrinkFixtureType type, int x, int y, unsigned rotation, uint64_t *out_id)
+{
+    return world == NULL ? SHRINK_BUILD_NOT_FOUND : shrink_geometry_place_fixture(&world->geometry, type, x, y, rotation, out_id);
+}
+
+ShrinkBuildResult shrink_try_move_fixture(ShrinkWorld *world, uint64_t id, int x, int y)
+{
+    return world == NULL ? SHRINK_BUILD_NOT_FOUND : shrink_geometry_move_fixture(&world->geometry, id, x, y);
+}
+
+ShrinkBuildResult shrink_try_rotate_fixture(ShrinkWorld *world, uint64_t id, unsigned rotation)
+{
+    return world == NULL ? SHRINK_BUILD_NOT_FOUND : shrink_geometry_rotate_fixture(&world->geometry, id, rotation);
+}
+
+ShrinkBuildResult shrink_try_remove_fixture(ShrinkWorld *world, uint64_t id)
+{
+    return world == NULL ? SHRINK_BUILD_NOT_FOUND : shrink_geometry_remove_fixture(&world->geometry, id);
+}
+
+ShrinkBuildResult shrink_try_add_wall(ShrinkWorld *world, int ax, int ay, int bx, int by, uint64_t *out_id)
+{
+    return world == NULL ? SHRINK_BUILD_NOT_FOUND : shrink_geometry_add_wall(&world->geometry, ax, ay, bx, by, out_id);
+}
+
+ShrinkBuildResult shrink_try_remove_wall(ShrinkWorld *world, uint64_t id)
+{
+    return world == NULL ? SHRINK_BUILD_NOT_FOUND : shrink_geometry_remove_wall(&world->geometry, id);
+}
+
+int shrink_geometry_has_routes(const ShrinkWorld *world)
+{
+    return world != NULL && shrink_geometry_routes_valid(&world->geometry);
+}
