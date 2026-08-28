@@ -1,0 +1,18 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource path="res://main_v3.gd" type="Script" id="1"]
+[ext_resource path="res://launcher.gd" type="Script" id="2"]
+
+[node name="ShrinkCityLauncher" type="Node"]
+
+[node name="Demo" type="Node2D" parent="."]
+script = ExtResource("1")
+
+[node name="ScenarioMenu" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("2")
